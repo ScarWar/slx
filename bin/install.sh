@@ -12,8 +12,8 @@ BLUE='\033[0;34m'
 CYAN='\033[0;36m'
 NC='\033[0m' # No Color
 
-# Get the directory where this script is located
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# Get the directory where this script is located (parent of bin/)
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 
 echo -e "${BLUE}========================================${NC}"
 echo -e "${BLUE}SLURM Cluster Management Tools Setup${NC}"
@@ -119,8 +119,8 @@ if [ ! -d "$WORKDIR" ]; then
 fi
 
 # Check if cluster.sh exists
-if [ ! -f "$WORKDIR/cluster.sh" ]; then
-    echo -e "${RED}Error: cluster.sh not found in '$WORKDIR'${NC}"
+if [ ! -f "$WORKDIR/bin/cluster.sh" ]; then
+    echo -e "${RED}Error: cluster.sh not found in '$WORKDIR/bin'${NC}"
     exit 1
 fi
 

@@ -93,7 +93,7 @@ complete -F _cluster_completion cluster.sh
 complete -F _cluster_completion cluster
 
 # If aliases are used, complete them too
-if command -v cluster.sh &> /dev/null || [ -f "$HOME/workdir/cluster.sh" ] || [ -f "${CLUSTER_WORKDIR:-$HOME/workdir}/cluster.sh" ]; then
+if command -v cluster.sh &> /dev/null || [ -f "$HOME/workdir/bin/cluster.sh" ] || [ -f "${CLUSTER_WORKDIR:-$HOME/workdir}/bin/cluster.sh" ]; then
     # Try to find cluster.sh in common locations
     _complete_cluster_alias() {
         local cur prev

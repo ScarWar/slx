@@ -20,8 +20,8 @@ Run the interactive installation script:
 ```bash
 git clone git@github.com:ScarWar/slurm-cluster-tools.git
 cd slurm-cluster-tools
-chmod +x install.sh
-./install.sh
+chmod +x bin/install.sh
+./bin/install.sh
 ```
 
 The script will:
@@ -40,7 +40,7 @@ cd slurm-cluster-tools
 
 2. Make the script executable:
 ```bash
-chmod +x cluster.sh
+chmod +x bin/cluster.sh
 ```
 
 3. Source the appropriate alias file for your shell:
@@ -237,12 +237,14 @@ cf jupyter
 
 ```
 .
-├── install.sh                  # Interactive installation script
-├── cluster.sh                  # Main cluster management script
+├── bin/
+│   ├── install.sh              # Interactive installation script
+│   └── cluster.sh              # Main cluster management script
+├── completions/
+│   ├── cluster-completion.bash # Bash completion script
+│   └── cluster-completion.zsh  # Zsh completion script
 ├── cluster_aliases.sh          # Bash/zsh aliases (auto-loads completion)
 ├── cluster_aliases.tcsh        # tcsh aliases
-├── cluster-completion.bash     # Bash completion script
-├── cluster-completion.zsh      # Zsh completion script
 ├── LICENSE                     # MIT License
 ├── .gitignore                  # Git ignore patterns
 └── README.md                   # This file
