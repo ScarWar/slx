@@ -237,11 +237,13 @@ cf jupyter
 
 ```
 .
+├── install.sh                  # Interactive installation script
 ├── cluster.sh                  # Main cluster management script
 ├── cluster_aliases.sh          # Bash/zsh aliases (auto-loads completion)
 ├── cluster_aliases.tcsh        # tcsh aliases
 ├── cluster-completion.bash     # Bash completion script
 ├── cluster-completion.zsh      # Zsh completion script
+├── LICENSE                     # MIT License
 ├── .gitignore                  # Git ignore patterns
 └── README.md                   # This file
 ```
