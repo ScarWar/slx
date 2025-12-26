@@ -39,6 +39,7 @@ DEFAULT_CPUS="4"
 DEFAULT_MEM="50000"
 DEFAULT_GPUS=""
 DEFAULT_EXCLUDE=""
+DEFAULT_NODELIST=""
 
 # Runtime configuration (loaded from config.env)
 SLX_WORKDIR=""
@@ -52,6 +53,7 @@ SLX_CPUS=""
 SLX_MEM=""
 SLX_GPUS=""
 SLX_EXCLUDE=""
+SLX_NODELIST=""
 SLX_LOG_DIR=""
 
 # Load configuration from config.env if it exists
@@ -75,6 +77,7 @@ load_config() {
     SLX_MEM="${SLX_MEM:-$DEFAULT_MEM}"
     SLX_GPUS="${SLX_GPUS:-$DEFAULT_GPUS}"
     SLX_EXCLUDE="${SLX_EXCLUDE:-$DEFAULT_EXCLUDE}"
+    SLX_NODELIST="${SLX_NODELIST:-$DEFAULT_NODELIST}"
     SLX_LOG_DIR="${SLX_LOG_DIR:-${SLX_WORKDIR}/slurm/logs}"
 }
 
@@ -99,6 +102,7 @@ SLX_CPUS="${SLX_CPUS}"
 SLX_MEM="${SLX_MEM}"
 SLX_GPUS="${SLX_GPUS}"
 SLX_EXCLUDE="${SLX_EXCLUDE}"
+SLX_NODELIST="${SLX_NODELIST}"
 
 # Log directory
 SLX_LOG_DIR="${SLX_LOG_DIR}"
@@ -124,6 +128,390 @@ get_input() {
         eval "$var_name='$default'"
     else
         eval "$var_name='$input'"
+    fi
+}
+
+# ============================================
+# SLURM Query Helpers (best-effort)
+# ============================================
+
+# Check if a command is available
+has_cmd() {
+    command -v "$1" &>/dev/null
+}
+
+# Detect which menu tool is available
+detect_menu_tool() {
+    if has_cmd whiptail; then
+        echo "whiptail"
+    elif has_cmd dialog; then
+        echo "dialog"
+    else
+        echo "text"
+    fi
+}
+
+# Query available partitions from SLURM
+slurm_query_partitions() {
+    if ! has_cmd sinfo; then
+        return 1
+    fi
+    sinfo -h -o "%P" 2>/dev/null | sed 's/\*$//' | sort -u | grep -v '^$'
+}
+
+# Query available accounts for current user
+slurm_query_accounts() {
+    if ! has_cmd sacctmgr; then
+        return 1
+    fi
+    sacctmgr -n -P show assoc where user="$USER" format=account 2>/dev/null | sort -u | grep -v '^$'
+}
+
+# Query available QoS for current user
+slurm_query_qos() {
+    if ! has_cmd sacctmgr; then
+        return 1
+    fi
+    sacctmgr -n -P show assoc where user="$USER" format=qos 2>/dev/null | tr ',' '\n' | sort -u | grep -v '^$'
+}
+
+# Query available nodes with state and partition info
+# Returns: nodename|state|partition
+slurm_query_nodes() {
+    if ! has_cmd sinfo; then
+        return 1
+    fi
+    sinfo -N -h -o "%N|%T|%P" 2>/dev/null | sed 's/\*$//' | sort -u | grep -v '^$'
+}
+
+# Query just node names (simple list)
+slurm_query_node_names() {
+    if ! has_cmd sinfo; then
+        return 1
+    fi
+    sinfo -N -h -o "%N" 2>/dev/null | sort -u | grep -v '^$'
+}
+
+# ============================================
+# Interactive Menu Helpers
+# ============================================
+
+# Single-select menu using whiptail/dialog or fallback
+# Usage: menu_select_one "title" "prompt" result_var option1 option2 ...
+menu_select_one() {
+    local title="$1"
+    local prompt="$2"
+    local result_var="$3"
+    shift 3
+    local options=("$@")
+    
+    if [ ${#options[@]} -eq 0 ]; then
+        eval "$result_var=''"
+        return 1
+    fi
+    
+    local menu_tool=$(detect_menu_tool)
+    
+    case "$menu_tool" in
+        whiptail|dialog)
+            local menu_items=()
+            local i=1
+            for opt in "${options[@]}"; do
+                menu_items+=("$opt" "$i")
+                ((i++))
+            done
+            
+            local choice
+            choice=$($menu_tool --title "$title" --menu "$prompt" 20 60 12 "${menu_items[@]}" 3>&1 1>&2 2>&3)
+            local exit_code=$?
+            
+            if [ $exit_code -eq 0 ] && [ -n "$choice" ]; then
+                eval "$result_var='$choice'"
+            else
+                eval "$result_var=''"
+            fi
+            ;;
+        text)
+            echo ""
+            echo -e "${CYAN}${title}${NC}"
+            echo -e "${prompt}"
+            echo ""
+            local i=1
+            for opt in "${options[@]}"; do
+                echo -e "  ${YELLOW}$i)${NC} $opt"
+                ((i++))
+            done
+            echo -e "  ${YELLOW}0)${NC} Skip / Enter manually"
+            echo ""
+            echo -ne "${CYAN}Select [1-${#options[@]}, 0 to skip]:${NC} "
+            read -r selection
+            
+            if [[ "$selection" =~ ^[0-9]+$ ]] && [ "$selection" -ge 1 ] && [ "$selection" -le ${#options[@]} ]; then
+                eval "$result_var='${options[$((selection-1))]}'"
+            else
+                eval "$result_var=''"
+            fi
+            ;;
+    esac
+}
+
+# Multi-select menu using whiptail/dialog or fallback
+# Usage: menu_select_many "title" "prompt" result_var option1 option2 ...
+# Result is comma-separated list
+menu_select_many() {
+    local title="$1"
+    local prompt="$2"
+    local result_var="$3"
+    shift 3
+    local options=("$@")
+    
+    if [ ${#options[@]} -eq 0 ]; then
+        eval "$result_var=''"
+        return 1
+    fi
+    
+    local menu_tool=$(detect_menu_tool)
+    
+    case "$menu_tool" in
+        whiptail|dialog)
+            local menu_items=()
+            for opt in "${options[@]}"; do
+                # Format: tag item status (OFF by default)
+                menu_items+=("$opt" "" "OFF")
+            done
+            
+            local choices
+            choices=$($menu_tool --title "$title" --checklist "$prompt" 22 70 15 "${menu_items[@]}" 3>&1 1>&2 2>&3)
+            local exit_code=$?
+            
+            if [ $exit_code -eq 0 ] && [ -n "$choices" ]; then
+                # Remove quotes and convert spaces to commas
+                local cleaned=$(echo "$choices" | tr -d '"' | tr ' ' ',')
+                eval "$result_var='$cleaned'"
+            else
+                eval "$result_var=''"
+            fi
+            ;;
+        text)
+            echo ""
+            echo -e "${CYAN}${title}${NC}"
+            echo -e "${prompt}"
+            echo ""
+            local i=1
+            for opt in "${options[@]}"; do
+                echo -e "  ${YELLOW}$i)${NC} $opt"
+                ((i++))
+            done
+            echo ""
+            echo -e "${CYAN}Enter selection (comma-separated numbers, ranges like 1-5, or 0 to skip):${NC}"
+            echo -ne "Selection: "
+            read -r selection
+            
+            if [ "$selection" = "0" ] || [ -z "$selection" ]; then
+                eval "$result_var=''"
+            else
+                # Parse ranges and individual numbers
+                local selected=()
+                IFS=',' read -ra parts <<< "$selection"
+                for part in "${parts[@]}"; do
+                    part=$(echo "$part" | tr -d ' ')
+                    if [[ "$part" =~ ^([0-9]+)-([0-9]+)$ ]]; then
+                        # Range
+                        local start="${BASH_REMATCH[1]}"
+                        local end="${BASH_REMATCH[2]}"
+                        for ((j=start; j<=end; j++)); do
+                            if [ "$j" -ge 1 ] && [ "$j" -le ${#options[@]} ]; then
+                                selected+=("${options[$((j-1))]}")
+                            fi
+                        done
+                    elif [[ "$part" =~ ^[0-9]+$ ]]; then
+                        if [ "$part" -ge 1 ] && [ "$part" -le ${#options[@]} ]; then
+                            selected+=("${options[$((part-1))]}")
+                        fi
+                    fi
+                done
+                
+                # Join with commas
+                local result=""
+                for s in "${selected[@]}"; do
+                    [ -n "$result" ] && result+=","
+                    result+="$s"
+                done
+                eval "$result_var='$result'"
+            fi
+            ;;
+    esac
+}
+
+# Show cluster resource summary
+show_cluster_resources() {
+    echo -e "${BLUE}Querying cluster resources...${NC}"
+    
+    local partitions=$(slurm_query_partitions)
+    local accounts=$(slurm_query_accounts)
+    local qos_list=$(slurm_query_qos)
+    local node_count=$(slurm_query_node_names | wc -l)
+    
+    echo ""
+    if [ -n "$partitions" ]; then
+        echo -e "  ${GREEN}✓${NC} Partitions: $(echo "$partitions" | wc -l) available"
+    else
+        echo -e "  ${YELLOW}!${NC} Could not query partitions"
+    fi
+    
+    if [ -n "$accounts" ]; then
+        echo -e "  ${GREEN}✓${NC} Accounts: $(echo "$accounts" | wc -l) available for $USER"
+    else
+        echo -e "  ${YELLOW}!${NC} Could not query accounts"
+    fi
+    
+    if [ -n "$qos_list" ]; then
+        echo -e "  ${GREEN}✓${NC} QoS: $(echo "$qos_list" | wc -l) available"
+    else
+        echo -e "  ${YELLOW}!${NC} Could not query QoS"
+    fi
+    
+    if [ "$node_count" -gt 0 ]; then
+        echo -e "  ${GREEN}✓${NC} Nodes: $node_count available"
+    else
+        echo -e "  ${YELLOW}!${NC} Could not query nodes"
+    fi
+    echo ""
+}
+
+# Interactive partition selection
+select_partition() {
+    local result_var="$1"
+    local default="$2"
+    
+    local partitions=$(slurm_query_partitions)
+    
+    if [ -z "$partitions" ]; then
+        get_input "Partition (could not query cluster)" "$default" "$result_var"
+        return
+    fi
+    
+    local opts=()
+    while IFS= read -r line; do
+        [ -n "$line" ] && opts+=("$line")
+    done <<< "$partitions"
+    
+    # Add manual entry option
+    opts+=("(manual entry)")
+    
+    local choice=""
+    menu_select_one "Select Partition" "Choose a partition for your jobs:" choice "${opts[@]}"
+    
+    if [ "$choice" = "(manual entry)" ] || [ -z "$choice" ]; then
+        get_input "Partition" "$default" "$result_var"
+    else
+        eval "$result_var='$choice'"
+    fi
+}
+
+# Interactive account selection
+select_account() {
+    local result_var="$1"
+    local default="$2"
+    
+    local accounts=$(slurm_query_accounts)
+    
+    if [ -z "$accounts" ]; then
+        get_input "Account (could not query cluster)" "$default" "$result_var"
+        return
+    fi
+    
+    local opts=()
+    while IFS= read -r line; do
+        [ -n "$line" ] && opts+=("$line")
+    done <<< "$accounts"
+    
+    opts+=("(manual entry)")
+    
+    local choice=""
+    menu_select_one "Select Account" "Choose your SLURM account:" choice "${opts[@]}"
+    
+    if [ "$choice" = "(manual entry)" ] || [ -z "$choice" ]; then
+        get_input "Account" "$default" "$result_var"
+    else
+        eval "$result_var='$choice'"
+    fi
+}
+
+# Interactive QoS selection
+select_qos() {
+    local result_var="$1"
+    local default="$2"
+    
+    local qos_list=$(slurm_query_qos)
+    
+    if [ -z "$qos_list" ]; then
+        get_input "QoS (could not query cluster)" "$default" "$result_var"
+        return
+    fi
+    
+    local opts=()
+    while IFS= read -r line; do
+        [ -n "$line" ] && opts+=("$line")
+    done <<< "$qos_list"
+    
+    opts+=("(manual entry)")
+    
+    local choice=""
+    menu_select_one "Select QoS" "Choose Quality of Service level:" choice "${opts[@]}"
+    
+    if [ "$choice" = "(manual entry)" ] || [ -z "$choice" ]; then
+        get_input "QoS" "$default" "$result_var"
+    else
+        eval "$result_var='$choice'"
+    fi
+}
+
+# Interactive node selection (multi-select for exclude/nodelist)
+select_nodes() {
+    local result_var="$1"
+    local default="$2"
+    local title="$3"
+    local prompt="$4"
+    
+    local nodes=$(slurm_query_nodes)
+    
+    if [ -z "$nodes" ]; then
+        get_input "$title (could not query cluster)" "$default" "$result_var"
+        return
+    fi
+    
+    # Parse nodes with state info for display
+    local opts=()
+    while IFS='|' read -r name state partition; do
+        [ -n "$name" ] && opts+=("$name")
+    done <<< "$nodes"
+    
+    # Remove duplicates
+    local unique_opts=($(printf '%s\n' "${opts[@]}" | sort -u))
+    
+    if [ ${#unique_opts[@]} -gt 50 ]; then
+        echo -e "${YELLOW}Large cluster detected (${#unique_opts[@]} nodes).${NC}"
+        echo -e "Options: ${CYAN}1)${NC} Interactive menu  ${CYAN}2)${NC} Manual entry (SLURM hostlist)"
+        echo -ne "Choice [1/2]: "
+        read -r method
+        
+        if [ "$method" = "2" ]; then
+            echo -e "${CYAN}Enter nodes (SLURM hostlist format, e.g. node[01-05,08]):${NC}"
+            get_input "$title" "$default" "$result_var"
+            return
+        fi
+    fi
+    
+    unique_opts+=("(manual entry)")
+    
+    local choice=""
+    menu_select_many "$title" "$prompt" choice "${unique_opts[@]}"
+    
+    if [ "$choice" = "(manual entry)" ] || [ -z "$choice" ]; then
+        get_input "$title (comma-separated or SLURM hostlist)" "$default" "$result_var"
+    else
+        eval "$result_var='$choice'"
     fi
 }
 
@@ -236,18 +624,39 @@ cmd_init() {
     fi
     
     echo ""
-    echo -e "${CYAN}SLURM job defaults (press Enter to skip):${NC}"
     
-    get_input "Default partition" "$SLX_PARTITION" "SLX_PARTITION"
-    get_input "Default account" "$SLX_ACCOUNT" "SLX_ACCOUNT"
-    get_input "Default QoS" "$SLX_QOS" "SLX_QOS"
+    # Show cluster resource summary
+    show_cluster_resources
+    
+    echo -e "${CYAN}SLURM job defaults - select from available options:${NC}"
+    echo ""
+    
+    # Cluster-aware selections for partition/account/QoS
+    select_partition "SLX_PARTITION" "$SLX_PARTITION"
+    select_account "SLX_ACCOUNT" "$SLX_ACCOUNT"
+    select_qos "SLX_QOS" "$SLX_QOS"
+    
+    echo ""
+    echo -e "${CYAN}Resource limits:${NC}"
     get_input "Default time limit (minutes)" "$SLX_TIME" "SLX_TIME"
     get_input "Default nodes" "$SLX_NODES" "SLX_NODES"
     get_input "Default tasks" "$SLX_NTASKS" "SLX_NTASKS"
     get_input "Default CPUs per task" "$SLX_CPUS" "SLX_CPUS"
     get_input "Default memory (MB)" "$SLX_MEM" "SLX_MEM"
     get_input "Default GPUs (leave empty for none)" "$SLX_GPUS" "SLX_GPUS"
-    get_input "Nodes to exclude (comma-separated)" "$SLX_EXCLUDE" "SLX_EXCLUDE"
+    
+    echo ""
+    echo -e "${CYAN}Node preferences:${NC}"
+    
+    # Multi-select for preferred nodes (nodelist)
+    select_nodes "SLX_NODELIST" "$SLX_NODELIST" \
+        "Preferred Nodes (NodeList)" \
+        "Select nodes to prefer for jobs (optional):"
+    
+    # Multi-select for excluded nodes
+    select_nodes "SLX_EXCLUDE" "$SLX_EXCLUDE" \
+        "Exclude Nodes" \
+        "Select nodes to exclude from jobs (optional):"
     
     # Set log directory
     SLX_LOG_DIR="${SLX_WORKDIR}/slurm/logs"
@@ -264,6 +673,7 @@ cmd_init() {
     echo -e "  CPUs:      ${GREEN}${SLX_CPUS}${NC}"
     echo -e "  Memory:    ${GREEN}${SLX_MEM} MB${NC}"
     echo -e "  GPUs:      ${GREEN}${SLX_GPUS:-<none>}${NC}"
+    echo -e "  NodeList:  ${GREEN}${SLX_NODELIST:-<none>}${NC}"
     echo -e "  Exclude:   ${GREEN}${SLX_EXCLUDE:-<none>}${NC}"
     echo ""
     
@@ -364,7 +774,8 @@ project_new() {
     get_input "SLURM job name" "$JOB_NAME" "JOB_NAME"
     
     echo ""
-    echo -e "${CYAN}Job resource settings (press Enter for defaults from config):${NC}"
+    echo -e "${CYAN}Job resource settings (defaults from config, override as needed):${NC}"
+    echo ""
     
     local P_PARTITION="$SLX_PARTITION"
     local P_ACCOUNT="$SLX_ACCOUNT"
@@ -376,17 +787,37 @@ project_new() {
     local P_MEM="$SLX_MEM"
     local P_GPUS="$SLX_GPUS"
     local P_EXCLUDE="$SLX_EXCLUDE"
+    local P_NODELIST="$SLX_NODELIST"
     
-    get_input "Partition" "$P_PARTITION" "P_PARTITION"
-    get_input "Account" "$P_ACCOUNT" "P_ACCOUNT"
-    get_input "QoS" "$P_QOS" "P_QOS"
-    get_input "Time (minutes)" "$P_TIME" "P_TIME"
-    get_input "Nodes" "$P_NODES" "P_NODES"
-    get_input "Tasks" "$P_NTASKS" "P_NTASKS"
-    get_input "CPUs per task" "$P_CPUS" "P_CPUS"
-    get_input "Memory (MB)" "$P_MEM" "P_MEM"
-    get_input "GPUs" "$P_GPUS" "P_GPUS"
-    get_input "Exclude nodes" "$P_EXCLUDE" "P_EXCLUDE"
+    # Check if user wants to customize settings
+    echo -e "Current defaults: Partition=${CYAN}${P_PARTITION:-<auto>}${NC}, Account=${CYAN}${P_ACCOUNT:-<auto>}${NC}"
+    echo -ne "${YELLOW}Customize job settings? [y/N]${NC}: "
+    read -r customize
+    
+    if [ "$customize" = "y" ] || [ "$customize" = "Y" ]; then
+        # Use cluster-aware menus for partition/account/qos
+        select_partition "P_PARTITION" "$P_PARTITION"
+        select_account "P_ACCOUNT" "$P_ACCOUNT"
+        select_qos "P_QOS" "$P_QOS"
+        
+        echo ""
+        echo -e "${CYAN}Resource limits:${NC}"
+        get_input "Time (minutes)" "$P_TIME" "P_TIME"
+        get_input "Nodes" "$P_NODES" "P_NODES"
+        get_input "Tasks" "$P_NTASKS" "P_NTASKS"
+        get_input "CPUs per task" "$P_CPUS" "P_CPUS"
+        get_input "Memory (MB)" "$P_MEM" "P_MEM"
+        get_input "GPUs" "$P_GPUS" "P_GPUS"
+        
+        echo ""
+        echo -e "${CYAN}Node preferences:${NC}"
+        select_nodes "P_NODELIST" "$P_NODELIST" \
+            "Preferred Nodes (NodeList)" \
+            "Select preferred nodes for this project:"
+        select_nodes "P_EXCLUDE" "$P_EXCLUDE" \
+            "Exclude Nodes" \
+            "Select nodes to exclude for this project:"
+    fi
     
     echo ""
     echo -e "${BLUE}Project Summary:${NC}"
@@ -423,7 +854,8 @@ EOF
     [ -n "$P_CPUS" ] && echo "#SBATCH --cpus-per-task=${P_CPUS}" >> "$SBATCH_FILE"
     [ -n "$P_MEM" ] && echo "#SBATCH --mem=${P_MEM}" >> "$SBATCH_FILE"
     [ -n "$P_GPUS" ] && echo "#SBATCH --gpus=${P_GPUS}" >> "$SBATCH_FILE"
-    [ -n "$P_EXCLUDE" ] && echo "#SBATCH --exclude=\"${P_EXCLUDE}\"" >> "$SBATCH_FILE"
+    [ -n "$P_NODELIST" ] && echo "#SBATCH --nodelist=${P_NODELIST}" >> "$SBATCH_FILE"
+    [ -n "$P_EXCLUDE" ] && echo "#SBATCH --exclude=${P_EXCLUDE}" >> "$SBATCH_FILE"
     
     cat >> "$SBATCH_FILE" << EOF
 #SBATCH --output=logs/%x_%j.out

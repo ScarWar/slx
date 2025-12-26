@@ -6,7 +6,8 @@ A production-ready SLURM project manager for HPC clusters. Manage jobs, create p
 
 - **Project Management** - Create and manage SLURM projects with generated sbatch/run scripts
 - **Job Operations** - Submit, list, kill, and monitor SLURM jobs
-- **Interactive Setup** - Configure cluster settings once, use everywhere
+- **Cluster-Aware Setup** - Queries SLURM for available partitions, accounts, QoS, and nodes
+- **Interactive Menus** - Multi-select UI with `whiptail`/`dialog` (falls back to text)
 - **Tab Completion** - Full bash/zsh completion support
 - **Short Aliases** - Optional quick aliases (`cs`, `cl`, `ck`, etc.)
 - **Cluster-Friendly** - Separates config (HOME) from data (WORKDIR) for limited quotas
@@ -68,9 +69,16 @@ Configure slx for your cluster (run once):
 slx init
 ```
 
-This prompts for:
-- **WORKDIR**: Where to store projects (use a large mount, not HOME)
-- **Default job settings**: Partition, account, QoS, time, memory, GPUs, etc.
+This queries your cluster and presents interactive menus:
+- **WORKDIR**: Where to store projects (auto-detects `/scratch`, `/data`, etc.)
+- **Partition**: Choose from available partitions (queried via `sinfo`)
+- **Account**: Choose from your accounts (queried via `sacctmgr`)
+- **QoS**: Choose from available QoS levels (queried via `sacctmgr`)
+- **NodeList**: Multi-select preferred nodes for jobs
+- **Exclude**: Multi-select nodes to exclude from jobs
+- **Resource limits**: Time, nodes, CPUs, memory, GPUs
+
+If `whiptail` or `dialog` is installed, you get a nice TUI menu. Otherwise, a text-based menu is used.
 
 ### Project Commands
 
@@ -159,10 +167,11 @@ SLX_NTASKS="1"
 SLX_CPUS="4"
 SLX_MEM="50000"
 SLX_GPUS="1"
-SLX_EXCLUDE="node-01,node-02"
+SLX_NODELIST=""              # Preferred nodes (--nodelist)
+SLX_EXCLUDE="node-01,node-02" # Excluded nodes (--exclude)
 ```
 
-Run `slx init` to update these settings interactively.
+Run `slx init` to update these settings interactively with cluster-aware menus.
 
 ## Project Structure
 
@@ -218,6 +227,10 @@ slx logs <TAB>               # Complete job IDs
 - SLURM workload manager
 - Bash shell (for the tool itself)
 - rsync (for installation, with fallback to cp)
+
+### Optional
+
+- **whiptail** or **dialog** - For interactive TUI menus during `slx init` and `slx project new`. If not installed, falls back to text-based selection.
 
 ## File Structure (Repository)
 
