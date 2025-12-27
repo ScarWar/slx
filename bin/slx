@@ -154,6 +154,111 @@ get_input() {
 }
 
 # ============================================
+# Template Processing
+# ============================================
+
+# Find template directory (checks multiple locations)
+find_template_dir() {
+    # Check if running from repo
+    local script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+    local repo_templates="${script_dir}/../templates"
+    if [ -d "$repo_templates" ]; then
+        echo "$repo_templates"
+        return 0
+    fi
+    
+    # Check installed location
+    local installed_templates="${SLX_DATA_DIR}/templates"
+    if [ -d "$installed_templates" ]; then
+        echo "$installed_templates"
+        return 0
+    fi
+    
+    # Fallback: check if templates are in same dir as script
+    if [ -d "${script_dir}/templates" ]; then
+        echo "${script_dir}/templates"
+        return 0
+    fi
+    
+    return 1
+}
+
+# Simple template processor (handles {{VAR}} and {{#VAR}}...{{/VAR}})
+# Usage: process_template template_file var1=value1 var2=value2 ...
+process_template() {
+    local template_file="$1"
+    shift
+    
+    if [ ! -f "$template_file" ]; then
+        echo -e "${RED}Error: Template file not found: ${template_file}${NC}" >&2
+        return 1
+    fi
+    
+    # Build associative array of variables from arguments
+    declare -A vars
+    for arg in "$@"; do
+        if [[ "$arg" =~ ^([^=]+)=(.+)$ ]]; then
+            vars["${BASH_REMATCH[1]}"]="${BASH_REMATCH[2]}"
+        fi
+    done
+    
+    # Read template content
+    local content=$(cat "$template_file")
+    
+    # Process conditional blocks {{#VAR}}...{{/VAR}}
+    # Handle both single-line and multi-line blocks
+    for var_name in "${!vars[@]}"; do
+        # Pattern to match: {{#VAR}}...{{/VAR}}
+        # Use a loop to handle all occurrences
+        while true; do
+            # Try to find the block pattern
+            local pattern_start="{{#${var_name}}}"
+            local pattern_end="{{/${var_name}}}"
+            local start_pos="${content%%$pattern_start*}"
+            
+            # If pattern not found, break
+            if [ "$start_pos" = "$content" ]; then
+                break
+            fi
+            
+            # Extract content after the start pattern
+            local after_start="${content#*$pattern_start}"
+            local end_pos="${after_start%%$pattern_end*}"
+            
+            # If end pattern not found, break (malformed template)
+            if [ "$end_pos" = "$after_start" ]; then
+                break
+            fi
+            
+            # Extract the block content
+            local block_content="$end_pos"
+            local full_block="${pattern_start}${block_content}${pattern_end}"
+            
+            # Check if variable is set and non-empty
+            if [ -n "${vars[$var_name]}" ]; then
+                # Replace variables in block content
+                local processed_block="$block_content"
+                for vname in "${!vars[@]}"; do
+                    processed_block="${processed_block//\{\{${vname}\}\}/${vars[$vname]}}"
+                done
+                # Replace the full block with processed content
+                content="${content//$full_block/$processed_block}"
+            else
+                # Remove the entire block (including newlines if present)
+                content="${content//$full_block/}"
+            fi
+        done
+    done
+    
+    # Process simple variable substitutions {{VAR}} (not in conditionals)
+    for var_name in "${!vars[@]}"; do
+        content="${content//\{\{${var_name}\}\}/${vars[$var_name]}}"
+    done
+    
+    echo "$content"
+}
+
+# ============================================
 # SLURM Query Helpers (best-effort)
 # ============================================
 
@@ -859,33 +964,52 @@ project_new() {
     # Create project structure
     mkdir -p "$PROJECT_DIR/logs"
     
-    # Generate sbatch file
+    # Generate sbatch file from template
     local SBATCH_FILE="${PROJECT_DIR}/${SBATCH_NAME}.sbatch"
-    cat > "$SBATCH_FILE" << EOF
+    local TEMPLATE_DIR=$(find_template_dir)
+    
+    if [ -z "$TEMPLATE_DIR" ] || [ ! -f "${TEMPLATE_DIR}/job.sbatch.tmpl" ]; then
+        # Fallback to direct generation if template not found
+        echo -e "${YELLOW}Warning: Template not found, using direct generation${NC}" >&2
+        cat > "$SBATCH_FILE" << EOF
 #!/bin/bash
 #SBATCH --job-name=${JOB_NAME}
 EOF
-    
-    # Add optional SBATCH directives
-    [ -n "$P_PARTITION" ] && echo "#SBATCH --partition=${P_PARTITION}" >> "$SBATCH_FILE"
-    [ -n "$P_ACCOUNT" ] && echo "#SBATCH --account=${P_ACCOUNT}" >> "$SBATCH_FILE"
-    [ -n "$P_QOS" ] && echo "#SBATCH --qos=${P_QOS}" >> "$SBATCH_FILE"
-    [ -n "$P_TIME" ] && echo "#SBATCH --time=${P_TIME}" >> "$SBATCH_FILE"
-    [ -n "$P_NODES" ] && echo "#SBATCH --nodes=${P_NODES}" >> "$SBATCH_FILE"
-    [ -n "$P_NTASKS" ] && echo "#SBATCH --ntasks=${P_NTASKS}" >> "$SBATCH_FILE"
-    [ -n "$P_CPUS" ] && echo "#SBATCH --cpus-per-task=${P_CPUS}" >> "$SBATCH_FILE"
-    [ -n "$P_MEM" ] && echo "#SBATCH --mem=${P_MEM}" >> "$SBATCH_FILE"
-    [ -n "$P_GPUS" ] && echo "#SBATCH --gpus=${P_GPUS}" >> "$SBATCH_FILE"
-    [ -n "$P_NODELIST" ] && echo "#SBATCH --nodelist=${P_NODELIST}" >> "$SBATCH_FILE"
-    [ -n "$P_EXCLUDE" ] && echo "#SBATCH --exclude=${P_EXCLUDE}" >> "$SBATCH_FILE"
-    
-    cat >> "$SBATCH_FILE" << EOF
+        [ -n "$P_PARTITION" ] && echo "#SBATCH --partition=${P_PARTITION}" >> "$SBATCH_FILE"
+        [ -n "$P_ACCOUNT" ] && echo "#SBATCH --account=${P_ACCOUNT}" >> "$SBATCH_FILE"
+        [ -n "$P_QOS" ] && echo "#SBATCH --qos=${P_QOS}" >> "$SBATCH_FILE"
+        [ -n "$P_TIME" ] && echo "#SBATCH --time=${P_TIME}" >> "$SBATCH_FILE"
+        [ -n "$P_NODES" ] && echo "#SBATCH --nodes=${P_NODES}" >> "$SBATCH_FILE"
+        [ -n "$P_NTASKS" ] && echo "#SBATCH --ntasks=${P_NTASKS}" >> "$SBATCH_FILE"
+        [ -n "$P_CPUS" ] && echo "#SBATCH --cpus-per-task=${P_CPUS}" >> "$SBATCH_FILE"
+        [ -n "$P_MEM" ] && echo "#SBATCH --mem=${P_MEM}" >> "$SBATCH_FILE"
+        [ -n "$P_GPUS" ] && echo "#SBATCH --gpus=${P_GPUS}" >> "$SBATCH_FILE"
+        [ -n "$P_NODELIST" ] && echo "#SBATCH --nodelist=${P_NODELIST}" >> "$SBATCH_FILE"
+        [ -n "$P_EXCLUDE" ] && echo "#SBATCH --exclude=${P_EXCLUDE}" >> "$SBATCH_FILE"
+        cat >> "$SBATCH_FILE" << EOF
 #SBATCH --output=logs/%x_%j.out
 #SBATCH --error=logs/%x_%j.err
 
 # Run the main script
 bash ${RUN_NAME}.sh
 EOF
+    else
+        # Use template
+        process_template "${TEMPLATE_DIR}/job.sbatch.tmpl" \
+            "JOB_NAME=${JOB_NAME}" \
+            "PARTITION=${P_PARTITION}" \
+            "ACCOUNT=${P_ACCOUNT}" \
+            "QOS=${P_QOS}" \
+            "TIME=${P_TIME}" \
+            "NODES=${P_NODES}" \
+            "NTASKS=${P_NTASKS}" \
+            "CPUS=${P_CPUS}" \
+            "MEM=${P_MEM}" \
+            "GPUS=${P_GPUS}" \
+            "NODELIST=${P_NODELIST}" \
+            "EXCLUDE=${P_EXCLUDE}" \
+            "RUN_NAME=${RUN_NAME}" > "$SBATCH_FILE"
+    fi
     
     # Generate run script
     local RUN_FILE="${PROJECT_DIR}/${RUN_NAME}.sh"

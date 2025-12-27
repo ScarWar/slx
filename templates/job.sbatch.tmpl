@@ -9,12 +9,10 @@
 {{#CPUS}}#SBATCH --cpus-per-task={{CPUS}}{{/CPUS}}
 {{#MEM}}#SBATCH --mem={{MEM}}{{/MEM}}
 {{#GPUS}}#SBATCH --gpus={{GPUS}}{{/GPUS}}
+{{#NODELIST}}#SBATCH --nodelist={{NODELIST}}{{/NODELIST}}
 {{#EXCLUDE}}#SBATCH --exclude="{{EXCLUDE}}"{{/EXCLUDE}}
 #SBATCH --output=logs/%x_%j.out
 #SBATCH --error=logs/%x_%j.err
-
-# Change to project directory
-cd "$(dirname "$0")"
 
 # Run the main script
 bash {{RUN_NAME}}.sh
