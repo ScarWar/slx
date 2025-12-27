@@ -4,9 +4,9 @@
 
 set -e
 
-# Source common functions
+# Source installer utilities
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-source "$SCRIPT_DIR/common.sh"
+source "$SCRIPT_DIR/../lib/slx/installer.sh"
 
 echo -e "${BLUE}========================================${NC}"
 echo -e "${BLUE}${BOLD}slx${NC}${BLUE} - SLurm eXtended Updater${NC}"

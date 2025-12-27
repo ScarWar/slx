@@ -1,6 +1,7 @@
 #!/bin/bash
-# slx (SLurm eXtended) Common Functions
-# Shared functionality for install.sh and update.sh
+# slx Installer Utilities
+# Shared functions for install.sh and update.sh only
+# NOTE: Runtime utilities are in lib/slx/common.sh
 
 # Tool info
 SLX_NAME="slx"
@@ -15,8 +16,8 @@ CYAN='\033[0;36m'
 BOLD='\033[1m'
 NC='\033[0m' # No Color
 
-# Get the directory where this script is located (repo root is parent of bin/)
-REPO_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+# Get the directory where this script is located (repo root is 2 levels up from lib/slx/)
+REPO_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 
 # XDG directories (with fallbacks)
 XDG_CONFIG_HOME="${XDG_CONFIG_HOME:-$HOME/.config}"
@@ -163,7 +164,9 @@ make_executable() {
     chmod +x "$SLX_DATA_DIR/bin/slx"
     chmod +x "$SLX_DATA_DIR/bin/install.sh" 2>/dev/null || true
     chmod +x "$SLX_DATA_DIR/bin/update.sh" 2>/dev/null || true
-    chmod +x "$SLX_DATA_DIR/bin/common.sh" 2>/dev/null || true
+    chmod +x "$SLX_DATA_DIR/lib/slx/installer.sh" 2>/dev/null || true
+    chmod +x "$SLX_DATA_DIR/lib/slx/common.sh" 2>/dev/null || true
+    chmod +x "$SLX_DATA_DIR/lib/slx/commands/"*.sh 2>/dev/null || true
 }
 
 # Get current installed version
