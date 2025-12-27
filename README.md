@@ -34,6 +34,25 @@ The installer will:
 2. Initialize slx for your cluster: `slx init`
 3. Create your first project: `slx project new`
 
+### Updating slx
+
+To update to a newer version:
+
+```bash
+cd slurm-cluster-tools
+git pull
+./bin/update.sh
+```
+
+The update script will:
+- Preserve your configuration (`~/.config/slx/config.env`)
+- Preserve your aliases
+- Preserve your projects and job data
+- Update the slx files to the latest version
+- Create a backup of your config before updating
+
+**Note:** You can also rerun `./bin/install.sh` to update, but it will ask interactive questions. The `update.sh` script is non-interactive and faster.
+
 ## Install Layout
 
 ```
@@ -239,7 +258,8 @@ slx logs <TAB>               # Complete job IDs
 ├── bin/
 │   ├── slx                  # Main CLI
 │   ├── cluster.sh           # Deprecated wrapper
-│   └── install.sh           # Installation script
+│   ├── install.sh           # Installation script
+│   └── update.sh            # Update script
 ├── completions/
 │   ├── slx.bash             # Bash completion
 │   └── slx.zsh              # Zsh completion
