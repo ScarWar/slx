@@ -90,7 +90,7 @@ get_input() {
 check_alias_conflicts() {
     local conflicts=""
     
-    for alias in c cs cl cls cr cpd ck cka ct ci cst ch cf ccl; do
+    for alias in sx sxs sxl sxls sxr sxpd sxk sxka sxt sxi sxst sxh sxf sxcl sxp sxpn sxps sxpl; do
         if command -v "$alias" &> /dev/null; then
             local cmd_path=$(command -v "$alias")
             # Skip if it's our own alias
@@ -192,7 +192,7 @@ echo ""
 
 # Ask about aliases
 echo -e "${CYAN}Would you like to set up short aliases?${NC}"
-echo "  (c, cs, cl, cls, cr, cpd, ck, cka, ct, ci, cst, ch, cf, ccl)"
+echo "  (sx, sxs, sxl, sxls, sxr, sxpd, sxk, sxka, sxt, sxi, sxst, sxh, sxf, sxcl)"
 echo -ne "${YELLOW}Install aliases? [Y/n]${NC}: "
 read -r install_aliases
 
@@ -224,24 +224,24 @@ if [ "$INSTALL_ALIASES" = true ]; then
 # Source this file in your .tcshrc or .cshrc
 
 alias slx '$HOME/.local/bin/slx'
-alias c 'slx'
-alias cs 'slx submit'
-alias cl 'slx logs'
-alias cls 'slx list'
-alias cr 'slx running'
-alias cpd 'slx pending'
-alias ck 'slx kill'
-alias cka 'slx killall'
-alias ct 'slx tail'
-alias ci 'slx info'
-alias cst 'slx status'
-alias ch 'slx history'
-alias cf 'slx find'
-alias ccl 'slx clean'
-alias cp 'slx project'
-alias cpn 'slx project new'
-alias cps 'slx project submit'
-alias cpl 'slx project list'
+alias sx 'slx'
+alias sxs 'slx submit'
+alias sxl 'slx logs'
+alias sxls 'slx list'
+alias sxr 'slx running'
+alias sxpd 'slx pending'
+alias sxk 'slx kill'
+alias sxka 'slx killall'
+alias sxt 'slx tail'
+alias sxi 'slx info'
+alias sxst 'slx status'
+alias sxh 'slx history'
+alias sxf 'slx find'
+alias sxcl 'slx clean'
+alias sxp 'slx project'
+alias sxpn 'slx project new'
+alias sxps 'slx project submit'
+alias sxpl 'slx project list'
 EOF
         echo -e "${GREEN}Aliases saved to: ${SLX_CONFIG_DIR}/aliases.tcsh${NC}"
     else
@@ -251,24 +251,24 @@ EOF
 # Source this file in your .bashrc or .zshrc
 
 alias slx='$HOME/.local/bin/slx'
-alias c='slx'
-alias cs='slx submit'
-alias cl='slx logs'
-alias cls='slx list'
-alias cr='slx running'
-alias cpd='slx pending'
-alias ck='slx kill'
-alias cka='slx killall'
-alias ct='slx tail'
-alias ci='slx info'
-alias cst='slx status'
-alias ch='slx history'
-alias cf='slx find'
-alias ccl='slx clean'
-alias cp='slx project'
-alias cpn='slx project new'
-alias cps='slx project submit'
-alias cpl='slx project list'
+alias sx='slx'
+alias sxs='slx submit'
+alias sxl='slx logs'
+alias sxls='slx list'
+alias sxr='slx running'
+alias sxpd='slx pending'
+alias sxk='slx kill'
+alias sxka='slx killall'
+alias sxt='slx tail'
+alias sxi='slx info'
+alias sxst='slx status'
+alias sxh='slx history'
+alias sxf='slx find'
+alias sxcl='slx clean'
+alias sxp='slx project'
+alias sxpn='slx project new'
+alias sxps='slx project submit'
+alias sxpl='slx project list'
 EOF
         echo -e "${GREEN}Aliases saved to: ${SLX_CONFIG_DIR}/aliases.sh${NC}"
     fi
@@ -440,12 +440,12 @@ echo ""
 
 if [ "$INSTALL_ALIASES" = true ]; then
     echo -e "${YELLOW}Available aliases:${NC}"
-    echo -e "  ${CYAN}c${NC}   - slx (base command)"
-    echo -e "  ${CYAN}cs${NC}  - slx submit"
-    echo -e "  ${CYAN}cl${NC}  - slx logs"
-    echo -e "  ${CYAN}cls${NC} - slx list"
-    echo -e "  ${CYAN}cpn${NC} - slx project new"
-    echo -e "  ${CYAN}cps${NC} - slx project submit"
+    echo -e "  ${CYAN}sx${NC}   - slx (base command)"
+    echo -e "  ${CYAN}sxs${NC}  - slx submit"
+    echo -e "  ${CYAN}sxl${NC}  - slx logs"
+    echo -e "  ${CYAN}sxls${NC} - slx list"
+    echo -e "  ${CYAN}sxpn${NC} - slx project new"
+    echo -e "  ${CYAN}sxps${NC} - slx project submit"
     echo ""
 fi
 
