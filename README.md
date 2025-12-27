@@ -208,13 +208,20 @@ $WORKDIR/projects/my-project/
     └── my-project_123456.err
 ```
 
-With `--git`, it also initializes a git repository and adds:
+With `--git`, it also creates a git repository subdirectory for your code:
 
 ```
-├── .git/            # Git repository
-├── .gitignore       # Ignores SLURM scripts and logs
-└── README.md        # Project documentation
+$WORKDIR/projects/my-project/
+├── run.sh           # SLURM run script
+├── run.sbatch       # SLURM job file
+├── logs/            # Job output logs
+└── my-project/      # Git repository (your code goes here)
+    ├── .git/
+    ├── .gitignore
+    └── README.md
 ```
+
+The git repo directory name defaults to the project name but can be customized during creation.
 
 ### run.sh
 

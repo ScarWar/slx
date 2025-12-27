@@ -166,6 +166,15 @@ project_new() {
         fi
     fi
     
+    # If git is enabled, ask for repo directory name
+    local GIT_REPO_NAME=""
+    if [ "$INIT_GIT" = "yes" ]; then
+        GIT_REPO_NAME="$PROJECT_NAME"
+        get_input "Git repo directory name" "$GIT_REPO_NAME" "GIT_REPO_NAME"
+        # Sanitize repo name
+        GIT_REPO_NAME=$(echo "$GIT_REPO_NAME" | tr ' ' '_' | tr -cd '[:alnum:]_-')
+    fi
+    
     echo ""
     echo -e "${BLUE}Project Summary:${NC}"
     echo -e "  Name:      ${GREEN}${PROJECT_NAME}${NC}"
@@ -173,7 +182,7 @@ project_new() {
     echo -e "  Run:       ${GREEN}${RUN_NAME}.sh${NC}"
     echo -e "  Sbatch:    ${GREEN}${SBATCH_NAME}.sbatch${NC}"
     if [ "$INIT_GIT" = "yes" ]; then
-        echo -e "  Git:       ${GREEN}yes${NC}"
+        echo -e "  Git repo:  ${GREEN}${GIT_REPO_NAME}/${NC}"
     else
         echo -e "  Git:       ${YELLOW}no${NC}"
     fi
@@ -253,24 +262,29 @@ EOF
     # Initialize git repository if requested
     if [ "$INIT_GIT" = "yes" ]; then
         if has_cmd git; then
+            local GIT_REPO_DIR="${PROJECT_DIR}/${GIT_REPO_NAME}"
+            
+            # Create git repo subdirectory
+            mkdir -p "$GIT_REPO_DIR"
+            
             # Only init if .git doesn't already exist
-            if [ ! -d "$PROJECT_DIR/.git" ]; then
-                git -C "$PROJECT_DIR" init --quiet
-                echo -e "${GREEN}Initialized git repository${NC}"
+            if [ ! -d "$GIT_REPO_DIR/.git" ]; then
+                git -C "$GIT_REPO_DIR" init --quiet
+                echo -e "${GREEN}Initialized git repository in ${GIT_REPO_NAME}/${NC}"
             fi
             
             # Create .gitignore only if it doesn't exist
-            local GITIGNORE_FILE="${PROJECT_DIR}/.gitignore"
+            local GITIGNORE_FILE="${GIT_REPO_DIR}/.gitignore"
             if [ ! -f "$GITIGNORE_FILE" ]; then
-                process_template "${TEMPLATE_DIR}/gitignore.tmpl" \
-                    "RUN_NAME=${RUN_NAME}" > "$GITIGNORE_FILE"
+                process_template "${TEMPLATE_DIR}/gitignore.tmpl" > "$GITIGNORE_FILE"
             fi
             
             # Create README.md only if it doesn't exist
-            local README_FILE="${PROJECT_DIR}/README.md"
+            local README_FILE="${GIT_REPO_DIR}/README.md"
             if [ ! -f "$README_FILE" ]; then
                 process_template "${TEMPLATE_DIR}/readme.md.tmpl" \
                     "PROJECT_NAME=${PROJECT_NAME}" \
+                    "GIT_REPO_NAME=${GIT_REPO_NAME}" \
                     "RUN_NAME=${RUN_NAME}" \
                     "SBATCH_NAME=${SBATCH_NAME}" > "$README_FILE"
             fi
@@ -284,18 +298,24 @@ EOF
     echo ""
     echo -e "${BLUE}Project structure:${NC}"
     echo "  ${PROJECT_DIR}/"
+    echo "    ├── ${RUN_NAME}.sh          # Your main script (edit this)"
+    echo "    ├── ${SBATCH_NAME}.sbatch   # SLURM job file"
+    echo "    ├── logs/                   # Job output logs"
     if [ "$INIT_GIT" = "yes" ] && has_cmd git; then
-        echo "    ├── .git/             # Git repository"
-        echo "    ├── .gitignore        # Ignores SLURM scripts"
-        echo "    ├── README.md         # Project documentation"
+        echo "    └── ${GIT_REPO_NAME}/       # Git repository (your code)"
+        echo "        ├── .git/"
+        echo "        ├── .gitignore"
+        echo "        └── README.md"
     fi
-    echo "    ├── ${RUN_NAME}.sh      # Your main script (edit this)"
-    echo "    ├── ${SBATCH_NAME}.sbatch    # SLURM job file"
-    echo "    └── logs/              # Job output logs"
     echo ""
     echo -e "${CYAN}Next steps:${NC}"
     echo "  1. Edit your run script: ${RUN_FILE}"
-    echo "  2. Submit the job:       slx project submit ${PROJECT_NAME}"
+    if [ "$INIT_GIT" = "yes" ] && has_cmd git; then
+        echo "  2. Add your code to:     ${PROJECT_DIR}/${GIT_REPO_NAME}/"
+        echo "  3. Submit the job:       slx project submit ${PROJECT_NAME}"
+    else
+        echo "  2. Submit the job:       slx project submit ${PROJECT_NAME}"
+    fi
     echo ""
 }
 
