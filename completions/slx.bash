@@ -38,10 +38,13 @@ _slx_completion() {
                     return 0
                     ;;
                 logs|tail|kill)
-                    # Complete with job IDs from squeue
+                    # Complete with job IDs from squeue (only job IDs, no other commands)
                     if command -v squeue &> /dev/null; then
                         local job_ids=$(squeue -u $USER -h -o "%i" 2>/dev/null)
                         COMPREPLY=($(compgen -W "${job_ids}" -- "${cur}"))
+                    else
+                        # No squeue available, return empty to prevent showing other commands
+                        COMPREPLY=()
                     fi
                     return 0
                     ;;
@@ -50,6 +53,8 @@ _slx_completion() {
                     if command -v squeue &> /dev/null; then
                         local job_ids=$(squeue -u $USER -h -o "%i" 2>/dev/null)
                         COMPREPLY=($(compgen -W "${job_ids}" -- "${cur}"))
+                    else
+                        COMPREPLY=()
                     fi
                     return 0
                     ;;
@@ -65,7 +70,14 @@ _slx_completion() {
                     if command -v squeue &> /dev/null; then
                         local job_names=$(squeue -u $USER -h -o "%j" 2>/dev/null | sort -u)
                         COMPREPLY=($(compgen -W "${job_names}" -- "${cur}"))
+                    else
+                        COMPREPLY=()
                     fi
+                    return 0
+                    ;;
+                *)
+                    # For other commands, return empty to prevent showing default completions
+                    COMPREPLY=()
                     return 0
                     ;;
             esac
@@ -73,6 +85,17 @@ _slx_completion() {
         3)
             # Third argument
             case "${COMP_WORDS[1]}" in
+                logs|tail|kill)
+                    # Complete with job IDs from squeue (after logs/tail/kill command)
+                    if command -v squeue &> /dev/null; then
+                        local job_ids=$(squeue -u $USER -h -o "%i" 2>/dev/null)
+                        COMPREPLY=($(compgen -W "${job_ids}" -- "${cur}"))
+                    else
+                        # No squeue available, return empty to prevent showing other commands
+                        COMPREPLY=()
+                    fi
+                    return 0
+                    ;;
                 project)
                     case "${COMP_WORDS[2]}" in
                         submit)
@@ -129,21 +152,23 @@ _complete_slx_alias() {
     local cmd="${COMP_WORDS[0]}"
     
     case "$cmd" in
-        cs)
-            # cs = slx submit
+        sxs)
+            # sxs = slx submit
             if [ "${COMP_CWORD}" -eq 1 ]; then
                 COMPREPLY=($(compgen -f -X '!*.sbatch' -- "${cur}"))
             fi
             ;;
-        cl|ct|ck)
-            # cl = logs, ct = tail, ck = kill
+        sxl|sxt|sxk)
+            # sxl = logs, sxt = tail, sxk = kill
             if [ "${COMP_CWORD}" -eq 1 ] && command -v squeue &> /dev/null; then
                 local job_ids=$(squeue -u $USER -h -o "%i" 2>/dev/null)
                 COMPREPLY=($(compgen -W "${job_ids}" -- "${cur}"))
+            else
+                COMPREPLY=()
             fi
             ;;
-        ci)
-            # ci = slx info
+        sxi)
+            # sxi = slx info
             if [ "${COMP_CWORD}" -eq 1 ] && command -v squeue &> /dev/null; then
                 local job_ids=$(squeue -u $USER -h -o "%i" 2>/dev/null)
                 COMPREPLY=($(compgen -W "${job_ids}" -- "${cur}"))
@@ -152,29 +177,43 @@ _complete_slx_alias() {
                 if [[ "${COMP_WORDS[1]}" =~ ^[0-9]+$ ]]; then
                     local options="--nodes -n"
                     COMPREPLY=($(compgen -W "${options}" -- "${cur}"))
+                else
+                    COMPREPLY=()
                 fi
+            else
+                COMPREPLY=()
             fi
             ;;
-        cf)
-            # cf = find
+        sxf)
+            # sxf = find
             if [ "${COMP_CWORD}" -eq 1 ] && command -v squeue &> /dev/null; then
                 local job_names=$(squeue -u $USER -h -o "%j" 2>/dev/null | sort -u)
                 COMPREPLY=($(compgen -W "${job_names}" -- "${cur}"))
+            else
+                COMPREPLY=()
             fi
             ;;
-        cps)
-            # cps = slx project submit
+        sxps)
+            # sxps = slx project submit
             if [ "${COMP_CWORD}" -eq 1 ]; then
                 local workdir="${SLX_WORKDIR:-$HOME/workdir}"
                 if [ -d "$workdir/projects" ]; then
                     local projects=$(ls -1 "$workdir/projects" 2>/dev/null)
                     COMPREPLY=($(compgen -W "${projects}" -- "${cur}"))
+                else
+                    COMPREPLY=()
                 fi
+            else
+                COMPREPLY=()
             fi
+            ;;
+        *)
+            # For unknown aliases, return empty
+            COMPREPLY=()
             ;;
     esac
     return 0
 }
 
-complete -F _complete_slx_alias cs cl ct ck ci cf cps 2>/dev/null || true
+complete -F _complete_slx_alias sxs sxl sxt sxk sxi sxf sxps 2>/dev/null || true
 

@@ -10,10 +10,10 @@ if ! type compdef &>/dev/null; then
     # by setting up the function to be deferred
     _slx_setup_completions() {
         compdef _slx slx
-        compdef _slx_submit cs
-        compdef _slx_job_id cl ct ck ci
-        compdef _slx_find cf
-        compdef _slx_project_submit cps
+        compdef _slx_submit sxs
+        compdef _slx_job_id sxl sxt sxk sxi
+        compdef _slx_find sxf
+        compdef _slx_project_submit sxps
     }
     # Register to run after compinit
     if [[ -z "$_comps" ]]; then
@@ -59,25 +59,34 @@ _slx() {
         'help:Show project help'
     )
     
-    _describe 'command' commands
+    # Only show commands if we're at position 1 (selecting the command)
+    if [[ $CURRENT -eq 2 ]]; then
+        _describe 'command' commands
+        return
+    fi
     
+    # Handle specific commands (position 2+)
     case $words[2] in
         project)
-            _describe 'project command' project_commands
-            case $words[3] in
-                submit)
-                    local workdir="${SLX_WORKDIR:-$HOME/workdir}"
-                    if [ -d "$workdir/projects" ]; then
-                        local projects=($(ls -1 "$workdir/projects" 2>/dev/null))
-                        _describe 'project' projects
-                    fi
-                    ;;
-            esac
+            if [[ $CURRENT -eq 3 ]]; then
+                _describe 'project command' project_commands
+            else
+                case $words[3] in
+                    submit)
+                        local workdir="${SLX_WORKDIR:-$HOME/workdir}"
+                        if [ -d "$workdir/projects" ]; then
+                            local projects=($(ls -1 "$workdir/projects" 2>/dev/null))
+                            _describe 'project' projects
+                        fi
+                        ;;
+                esac
+            fi
             ;;
         submit)
             _files -g '*.sbatch'
             ;;
         logs|tail|kill)
+            # Only show job IDs, not other commands
             if command -v squeue &> /dev/null; then
                 local job_ids=($(squeue -u $USER -h -o "%i" 2>/dev/null))
                 _describe 'job-id' job_ids
@@ -86,9 +95,14 @@ _slx() {
         info)
             if command -v squeue &> /dev/null; then
                 local job_ids=($(squeue -u $USER -h -o "%i" 2>/dev/null))
-                local options=('--nodes:Show only nodes' '-n:Show only nodes')
-                _describe 'job-id' job_ids
-                _describe 'option' options
+                if [[ $CURRENT -eq 3 ]]; then
+                    # Position 3: show job IDs
+                    _describe 'job-id' job_ids
+                elif [[ $CURRENT -eq 4 ]] && [[ "$words[3]" =~ ^[0-9]+$ ]]; then
+                    # Position 4: show options if position 3 was a job ID
+                    local options=('--nodes:Show only nodes' '-n:Show only nodes')
+                    _describe 'option' options
+                fi
             fi
             ;;
         list)
@@ -136,8 +150,8 @@ _slx_project_submit() {
 # Register completions if compdef is available
 if type compdef &>/dev/null; then
     compdef _slx slx
-    compdef _slx_submit cs
-    compdef _slx_job_id cl ct ck ci
-    compdef _slx_find cf
-    compdef _slx_project_submit cps
+    compdef _slx_submit sxs
+    compdef _slx_job_id sxl sxt sxk sxi
+    compdef _slx_find sxf
+    compdef _slx_project_submit sxps
 fi
