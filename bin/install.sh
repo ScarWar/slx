@@ -4,31 +4,9 @@
 
 set -e
 
-# Tool info
-SLX_NAME="slx"
-SLX_VERSION="1.0.0"
-
-# Colors for output
-RED='\033[0;31m'
-GREEN='\033[0;32m'
-YELLOW='\033[1;33m'
-BLUE='\033[0;34m'
-CYAN='\033[0;36m'
-BOLD='\033[1m'
-NC='\033[0m' # No Color
-
-# Get the directory where this script is located (repo root is parent of bin/)
-REPO_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-
-# XDG directories (with fallbacks)
-XDG_CONFIG_HOME="${XDG_CONFIG_HOME:-$HOME/.config}"
-XDG_DATA_HOME="${XDG_DATA_HOME:-$HOME/.local/share}"
-LOCAL_BIN="$HOME/.local/bin"
-
-# slx installation paths
-SLX_CONFIG_DIR="${XDG_CONFIG_HOME}/${SLX_NAME}"
-SLX_DATA_DIR="${XDG_DATA_HOME}/${SLX_NAME}"
-SLX_BIN="${LOCAL_BIN}/${SLX_NAME}"
+# Source common functions
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+source "$SCRIPT_DIR/common.sh"
 
 echo -e "${BLUE}========================================${NC}"
 echo -e "${BLUE}${BOLD}slx${NC}${BLUE} - SLurm eXtended Installer${NC}"
@@ -39,31 +17,6 @@ echo -e "  Executable: ${CYAN}${SLX_BIN}${NC}"
 echo -e "  Data:       ${CYAN}${SLX_DATA_DIR}${NC}"
 echo -e "  Config:     ${CYAN}${SLX_CONFIG_DIR}${NC}"
 echo ""
-
-# Detect current shell
-detect_shell() {
-    if [ -n "$ZSH_VERSION" ]; then
-        echo "zsh"
-    elif [ -n "$BASH_VERSION" ]; then
-        echo "bash"
-    elif [ -n "$tcsh" ] || [ -n "$csh" ]; then
-        if [ -n "$tcsh" ] || echo "$SHELL" | grep -q "tcsh"; then
-            echo "tcsh"
-        else
-            echo "csh"
-        fi
-    elif [ -n "$SHELL" ]; then
-        case "$SHELL" in
-            *zsh*) echo "zsh" ;;
-            *bash*) echo "bash" ;;
-            *tcsh*) echo "tcsh" ;;
-            *csh*) echo "csh" ;;
-            *) echo "bash" ;;
-        esac
-    else
-        echo "bash"
-    fi
-}
 
 # Get user input with default
 get_input() {
@@ -145,37 +98,15 @@ mkdir -p "$SLX_CONFIG_DIR"
 # Copy payload to ~/.local/share/slx/
 echo -e "${BLUE}Installing slx to ${SLX_DATA_DIR}...${NC}"
 
-# Clean previous installation
-if [ -d "$SLX_DATA_DIR" ]; then
-    rm -rf "$SLX_DATA_DIR"/*
-fi
-
-# Copy files (exclude .git, projects/, slurm/, and user files)
-rsync -a --exclude='.git' \
-         --exclude='projects/' \
-         --exclude='slurm/' \
-         --exclude='*.pyc' \
-         --exclude='__pycache__' \
-         "$REPO_DIR/" "$SLX_DATA_DIR/" 2>/dev/null || {
-    # Fallback if rsync is not available
-    cp -r "$REPO_DIR"/* "$SLX_DATA_DIR/" 2>/dev/null || true
-    rm -rf "$SLX_DATA_DIR/.git" 2>/dev/null || true
-    rm -rf "$SLX_DATA_DIR/projects" 2>/dev/null || true
-    rm -rf "$SLX_DATA_DIR/slurm" 2>/dev/null || true
-}
+# Install files (don't preserve user data for fresh install)
+install_files false
 
 # Make scripts executable
-chmod +x "$SLX_DATA_DIR/bin/slx"
-chmod +x "$SLX_DATA_DIR/bin/install.sh" 2>/dev/null || true
+make_executable
 
-# Create wrapper script in ~/.local/bin/slx
+# Create wrapper script
 echo -e "${BLUE}Creating slx command...${NC}"
-cat > "$SLX_BIN" << 'EOF'
-#!/bin/bash
-# slx wrapper - executes the installed slx
-exec "$HOME/.local/share/slx/bin/slx" "$@"
-EOF
-chmod +x "$SLX_BIN"
+create_wrapper
 
 echo -e "${GREEN}slx command installed to: ${SLX_BIN}${NC}"
 
@@ -288,28 +219,7 @@ fi
 echo ""
 
 # Determine shell config file
-case "$SHELL_TYPE" in
-    bash)
-        SHELL_CONFIG="$HOME/.bashrc"
-        ALIAS_FILE="$SLX_CONFIG_DIR/aliases.sh"
-        COMPLETION_FILE="$SLX_DATA_DIR/completions/slx.bash"
-        ;;
-    zsh)
-        SHELL_CONFIG="$HOME/.zshrc"
-        ALIAS_FILE="$SLX_CONFIG_DIR/aliases.sh"
-        COMPLETION_FILE="$SLX_DATA_DIR/completions/slx.zsh"
-        ;;
-    tcsh)
-        SHELL_CONFIG="$HOME/.tcshrc"
-        ALIAS_FILE="$SLX_CONFIG_DIR/aliases.tcsh"
-        COMPLETION_FILE=""  # No completion for tcsh
-        ;;
-    csh)
-        SHELL_CONFIG="$HOME/.cshrc"
-        ALIAS_FILE="$SLX_CONFIG_DIR/aliases.tcsh"
-        COMPLETION_FILE=""  # No completion for csh
-        ;;
-esac
+get_shell_config "$SHELL_TYPE"
 
 # Create shell config if it doesn't exist
 if [ ! -f "$SHELL_CONFIG" ]; then
