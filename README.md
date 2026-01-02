@@ -5,10 +5,12 @@ A production-ready SLURM project manager for HPC clusters. Manage jobs, create p
 ## Features
 
 - **Project Management** - Create and manage SLURM projects with generated sbatch/run scripts
+- **Compute Profiles** - Save and reuse SLURM job presets (partition, GPUs, memory, node preferences)
 - **Git Integration** - Optionally initialize a git repository for your project code
 - **Job Operations** - Submit, list, kill, and monitor SLURM jobs
 - **Cluster-Aware Setup** - Queries SLURM for available partitions, accounts, QoS, and nodes
 - **Interactive Menus** - Multi-select UI with `whiptail`/`dialog` (falls back to text)
+- **Rich Node Info** - Shows CPU/memory/GPU details when selecting nodes
 - **Tab Completion** - Full bash/zsh completion support
 - **Short Aliases** - Optional quick aliases (`sx`, `sxs`, `sxl`, `sxk`, etc.)
 - **Cluster-Friendly** - Separates config (HOME) from data (WORKDIR) for limited quotas
@@ -95,6 +97,12 @@ slx project new --git
 # Skip git (non-interactive)
 slx project new --no-git
 
+# Create with a specific compute profile
+slx project new --profile gpu-large
+
+# Combine options
+slx project new --git --profile debug
+
 # List all projects
 slx project list
 
@@ -104,10 +112,11 @@ slx project submit my-project
 
 #### Project Options
 
-| Option        | Description                                               |
-|--------       |-------------                                              |
-| `--git`       | Initialize a git repository with README.md and .gitignore |
-| `--no-git`    | Skip git initialization (no prompt)                       |
+| Option             | Description                                               |
+|--------------------|-----------------------------------------------------------|
+| `--git`            | Initialize a git repository with README.md and .gitignore |
+| `--no-git`         | Skip git initialization (no prompt)                       |
+| `--profile <name>` | Use a compute profile for job defaults                    |
 
 When creating a project, you'll be prompted for:
 
@@ -118,6 +127,49 @@ When creating a project, you'll be prompted for:
 - **Job settings** (optional customization)
 - **Git repository** (if not specified via flag)
 - **Git repo directory name** (if git enabled, defaults to project name)
+
+### Compute Profiles
+
+Profiles let you save SLURM job presets for different workload types:
+
+```bash
+# Create a new profile
+slx profile new
+
+# List all profiles
+slx profile list
+
+# Show profile details
+slx profile show gpu-large
+
+# Delete a profile
+slx profile delete debug
+```
+
+#### Example Profiles
+
+- **cpu-small**: CPU jobs with 4 cores, 16GB RAM, short time limit
+- **gpu-large**: Multi-GPU jobs on A100 nodes, high memory
+- **debug**: Quick test runs with minimal resources
+
+#### Profile Settings
+
+Each profile stores:
+- Partition, account, QoS
+- Time limit, nodes, tasks, CPUs
+- Memory, GPUs
+- Preferred nodes (NodeList)
+- Excluded nodes
+
+Profiles are stored in `~/.config/slx/profiles.d/<name>.env`.
+
+#### Using Profiles
+
+When creating a project, you can either:
+1. Select a profile interactively (if profiles exist)
+2. Specify via command line: `slx project new --profile gpu-large`
+
+The profile settings become the starting defaults, which you can still customize.
 
 ### Job Commands
 
@@ -265,6 +317,19 @@ SLX_EXCLUDE="node-01,node-02" # Excluded nodes (--exclude)
 
 Run `slx init` to update these settings interactively with cluster-aware menus.
 
+### Node Inventory (Optional)
+
+For clusters where SLURM doesn't expose detailed node info, you can create a custom inventory file at `~/.config/slx/nodes.tsv` to show GPU/CPU/memory details in the node selection dialog:
+
+```tsv
+nodeName	gpu	cpu	mem	notes
+gpu-node01	A100x4	64	512G	Fast interconnect
+gpu-node02	A100x4	64	512G	Fast interconnect
+cpu-node01		128	1T	High memory
+```
+
+The file is tab-separated with columns: `nodeName`, `gpu`, `cpu`, `mem`, `notes`. The header line is optional. This information augments what SLURM reports.
+
 ## Tab Completion
 
 Tab completion is available for bash and zsh:
@@ -294,7 +359,11 @@ slx logs <TAB>               # Complete job IDs
 ~/.config/
 └── slx/
     ├── config.env             # User configuration
-    └── aliases.sh             # Shell aliases (if enabled)
+    ├── aliases.sh             # Shell aliases (if enabled)
+    ├── profiles.d/            # Compute profiles
+    │   ├── cpu-small.env
+    │   └── gpu-large.env
+    └── nodes.tsv              # Optional node inventory (see below)
 
 $WORKDIR/
 └── projects/

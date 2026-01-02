@@ -14,6 +14,8 @@ XDG_DATA_HOME="${XDG_DATA_HOME:-$HOME/.local/share}"
 SLX_CONFIG_DIR="${XDG_CONFIG_HOME}/${SLX_NAME}"
 SLX_CONFIG_FILE="${SLX_CONFIG_DIR}/config.env"
 SLX_DATA_DIR="${XDG_DATA_HOME}/${SLX_NAME}"
+SLX_PROFILES_DIR="${SLX_CONFIG_DIR}/profiles.d"
+SLX_NODE_INVENTORY_FILE="${SLX_CONFIG_DIR}/nodes.tsv"
 
 # Check if terminal supports colors
 supports_colors() {
@@ -127,6 +129,193 @@ SLX_NODELIST="${SLX_NODELIST}"
 SLX_LOG_DIR="${SLX_LOG_DIR}"
 EOF
     echo -e "${GREEN}Configuration saved to: ${SLX_CONFIG_FILE}${NC}"
+}
+
+# ============================================
+# Compute Profile Helpers
+# ============================================
+
+# Sanitize a profile name (alphanumeric, dash, underscore only)
+sanitize_profile_name() {
+    echo "$1" | tr ' ' '_' | tr -cd '[:alnum:]_-' | tr '[:upper:]' '[:lower:]'
+}
+
+# List all available profile names (without .env extension)
+list_profiles() {
+    if [ ! -d "$SLX_PROFILES_DIR" ]; then
+        return 0
+    fi
+    for f in "$SLX_PROFILES_DIR"/*.env; do
+        [ -f "$f" ] || continue
+        basename "$f" .env
+    done
+}
+
+# Check if a profile exists
+profile_exists() {
+    local name="$1"
+    [ -f "$SLX_PROFILES_DIR/${name}.env" ]
+}
+
+# Load a profile into SLX_PROFILE_* variables
+# Usage: load_profile "profile_name"
+# Sets: SLX_PROFILE_NAME, SLX_PROFILE_DESC, SLX_PROFILE_PARTITION, etc.
+load_profile() {
+    local name="$1"
+    local profile_file="$SLX_PROFILES_DIR/${name}.env"
+    
+    if [ ! -f "$profile_file" ]; then
+        echo -e "${RED}Error: Profile '${name}' not found${NC}" >&2
+        return 1
+    fi
+    
+    # Clear any existing profile variables
+    unset SLX_PROFILE_NAME SLX_PROFILE_DESC
+    unset SLX_PROFILE_PARTITION SLX_PROFILE_ACCOUNT SLX_PROFILE_QOS
+    unset SLX_PROFILE_TIME SLX_PROFILE_NODES SLX_PROFILE_NTASKS
+    unset SLX_PROFILE_CPUS SLX_PROFILE_MEM SLX_PROFILE_GPUS
+    unset SLX_PROFILE_NODELIST SLX_PROFILE_EXCLUDE
+    
+    # Source the profile
+    set -a
+    source "$profile_file"
+    set +a
+    
+    return 0
+}
+
+# Save a profile from current SLX_PROFILE_* variables
+# Usage: save_profile "profile_name"
+save_profile() {
+    local name="$1"
+    
+    mkdir -p "$SLX_PROFILES_DIR"
+    
+    local profile_file="$SLX_PROFILES_DIR/${name}.env"
+    
+    cat > "$profile_file" << EOF
+# slx compute profile: ${name}
+# Generated on $(date)
+
+# Profile metadata
+SLX_PROFILE_NAME="${SLX_PROFILE_NAME:-$name}"
+SLX_PROFILE_DESC="${SLX_PROFILE_DESC:-}"
+
+# SLURM settings
+SLX_PROFILE_PARTITION="${SLX_PROFILE_PARTITION:-}"
+SLX_PROFILE_ACCOUNT="${SLX_PROFILE_ACCOUNT:-}"
+SLX_PROFILE_QOS="${SLX_PROFILE_QOS:-}"
+SLX_PROFILE_TIME="${SLX_PROFILE_TIME:-}"
+SLX_PROFILE_NODES="${SLX_PROFILE_NODES:-}"
+SLX_PROFILE_NTASKS="${SLX_PROFILE_NTASKS:-}"
+SLX_PROFILE_CPUS="${SLX_PROFILE_CPUS:-}"
+SLX_PROFILE_MEM="${SLX_PROFILE_MEM:-}"
+SLX_PROFILE_GPUS="${SLX_PROFILE_GPUS:-}"
+
+# Node preferences
+SLX_PROFILE_NODELIST="${SLX_PROFILE_NODELIST:-}"
+SLX_PROFILE_EXCLUDE="${SLX_PROFILE_EXCLUDE:-}"
+EOF
+    
+    echo -e "${GREEN}Profile saved to: ${profile_file}${NC}"
+}
+
+# Delete a profile
+# Usage: delete_profile "profile_name"
+delete_profile() {
+    local name="$1"
+    local profile_file="$SLX_PROFILES_DIR/${name}.env"
+    
+    if [ ! -f "$profile_file" ]; then
+        echo -e "${RED}Error: Profile '${name}' not found${NC}" >&2
+        return 1
+    fi
+    
+    rm -f "$profile_file"
+    echo -e "${GREEN}Profile '${name}' deleted${NC}"
+}
+
+# Print a profile summary
+# Usage: print_profile_summary "profile_name"
+print_profile_summary() {
+    local name="$1"
+    
+    if ! load_profile "$name"; then
+        return 1
+    fi
+    
+    echo -e "${BLUE}Profile: ${GREEN}${SLX_PROFILE_NAME:-$name}${NC}"
+    [ -n "$SLX_PROFILE_DESC" ] && echo -e "  Description: ${SLX_PROFILE_DESC}"
+    echo ""
+    echo -e "  ${CYAN}SLURM Settings:${NC}"
+    [ -n "$SLX_PROFILE_PARTITION" ] && echo -e "    Partition:  ${SLX_PROFILE_PARTITION}"
+    [ -n "$SLX_PROFILE_ACCOUNT" ] && echo -e "    Account:    ${SLX_PROFILE_ACCOUNT}"
+    [ -n "$SLX_PROFILE_QOS" ] && echo -e "    QoS:        ${SLX_PROFILE_QOS}"
+    [ -n "$SLX_PROFILE_TIME" ] && echo -e "    Time:       ${SLX_PROFILE_TIME} min"
+    [ -n "$SLX_PROFILE_NODES" ] && echo -e "    Nodes:      ${SLX_PROFILE_NODES}"
+    [ -n "$SLX_PROFILE_NTASKS" ] && echo -e "    Tasks:      ${SLX_PROFILE_NTASKS}"
+    [ -n "$SLX_PROFILE_CPUS" ] && echo -e "    CPUs:       ${SLX_PROFILE_CPUS}"
+    [ -n "$SLX_PROFILE_MEM" ] && echo -e "    Memory:     ${SLX_PROFILE_MEM} MB"
+    [ -n "$SLX_PROFILE_GPUS" ] && echo -e "    GPUs:       ${SLX_PROFILE_GPUS}"
+    echo ""
+    echo -e "  ${CYAN}Node Preferences:${NC}"
+    [ -n "$SLX_PROFILE_NODELIST" ] && echo -e "    NodeList:   ${SLX_PROFILE_NODELIST}"
+    [ -n "$SLX_PROFILE_EXCLUDE" ] && echo -e "    Exclude:    ${SLX_PROFILE_EXCLUDE}"
+    if [ -z "$SLX_PROFILE_NODELIST" ] && [ -z "$SLX_PROFILE_EXCLUDE" ]; then
+        echo -e "    ${YELLOW}(none set)${NC}"
+    fi
+}
+
+# Apply a loaded profile to P_* project variables
+# Call load_profile first, then call this to set P_PARTITION, P_ACCOUNT, etc.
+apply_profile_to_project() {
+    [ -n "$SLX_PROFILE_PARTITION" ] && P_PARTITION="$SLX_PROFILE_PARTITION"
+    [ -n "$SLX_PROFILE_ACCOUNT" ] && P_ACCOUNT="$SLX_PROFILE_ACCOUNT"
+    [ -n "$SLX_PROFILE_QOS" ] && P_QOS="$SLX_PROFILE_QOS"
+    [ -n "$SLX_PROFILE_TIME" ] && P_TIME="$SLX_PROFILE_TIME"
+    [ -n "$SLX_PROFILE_NODES" ] && P_NODES="$SLX_PROFILE_NODES"
+    [ -n "$SLX_PROFILE_NTASKS" ] && P_NTASKS="$SLX_PROFILE_NTASKS"
+    [ -n "$SLX_PROFILE_CPUS" ] && P_CPUS="$SLX_PROFILE_CPUS"
+    [ -n "$SLX_PROFILE_MEM" ] && P_MEM="$SLX_PROFILE_MEM"
+    [ -n "$SLX_PROFILE_GPUS" ] && P_GPUS="$SLX_PROFILE_GPUS"
+    [ -n "$SLX_PROFILE_NODELIST" ] && P_NODELIST="$SLX_PROFILE_NODELIST"
+    [ -n "$SLX_PROFILE_EXCLUDE" ] && P_EXCLUDE="$SLX_PROFILE_EXCLUDE"
+}
+
+# Interactive profile selection
+# Usage: select_profile result_var
+# Returns empty string if no profiles or user skips
+select_profile() {
+    local result_var="$1"
+    
+    local profiles=($(list_profiles))
+    
+    if [ ${#profiles[@]} -eq 0 ]; then
+        eval "$result_var=''"
+        return 0
+    fi
+    
+    # Build display options with descriptions
+    local opts=()
+    opts+=("(none - use defaults)")
+    for p in "${profiles[@]}"; do
+        local desc=""
+        if load_profile "$p" 2>/dev/null; then
+            [ -n "$SLX_PROFILE_DESC" ] && desc=" - ${SLX_PROFILE_DESC}"
+        fi
+        opts+=("${p}${desc}")
+    done
+    
+    local choice=""
+    menu_select_one "Select Compute Profile" "Choose a profile for job defaults (or skip to use global config):" choice "${opts[@]}"
+    
+    if [ "$choice" = "(none - use defaults)" ] || [ -z "$choice" ]; then
+        eval "$result_var=''"
+    else
+        # Extract profile name (before " - " if description present)
+        local selected_name="${choice%% - *}"
+        eval "$result_var='$selected_name'"
+    fi
 }
 
 # Get user input with default
@@ -314,6 +503,147 @@ slurm_query_node_names() {
         return 1
     fi
     sinfo -N -h -o "%N" 2>/dev/null | sort -u | grep -v '^$'
+}
+
+# Query detailed node information (CPU, memory, GPU/GRES, state)
+# Returns: nodename|state|cpus|mem|gres|partition
+# Best-effort: tries sinfo with detailed format
+slurm_query_node_details() {
+    if ! has_cmd sinfo; then
+        return 1
+    fi
+    # Format: NodeName|State|CPUs|Memory(MB)|GRES|Partition
+    # Memory is in MB, GRES shows GPU info like "gpu:a100:4"
+    sinfo -N -h -o "%N|%T|%c|%m|%G|%P" 2>/dev/null | sed 's/\*$//' | sort -u | grep -v '^$'
+}
+
+# Load node inventory from user-maintained TSV file
+# Format: nodeName<TAB>gpu<TAB>cpu<TAB>mem<TAB>notes
+# Usage: load_node_inventory
+# Populates associative array NODE_INVENTORY[nodename]="gpu|cpu|mem|notes"
+declare -A NODE_INVENTORY
+load_node_inventory() {
+    NODE_INVENTORY=()
+    
+    if [ ! -f "$SLX_NODE_INVENTORY_FILE" ]; then
+        return 0
+    fi
+    
+    while IFS=$'\t' read -r name gpu cpu mem notes; do
+        # Skip header line and empty lines
+        [[ "$name" =~ ^#.*$ || -z "$name" || "$name" == "nodeName" ]] && continue
+        NODE_INVENTORY["$name"]="${gpu}|${cpu}|${mem}|${notes}"
+    done < "$SLX_NODE_INVENTORY_FILE"
+}
+
+# Lookup node info from inventory
+# Usage: lookup_node_inventory "nodename"
+# Returns: "gpu|cpu|mem|notes" or empty string if not found
+lookup_node_inventory() {
+    local name="$1"
+    echo "${NODE_INVENTORY[$name]:-}"
+}
+
+# Format node display string with details
+# Usage: format_node_display "nodename" "state" "cpus" "mem" "gres" "partition"
+# Returns compact display like: "node01 [idle] cpu=64 mem=512G gpu=a100x4"
+format_node_display() {
+    local name="$1"
+    local state="$2"
+    local cpus="$3"
+    local mem="$4"
+    local gres="$5"
+    local partition="$6"
+    
+    local display="$name"
+    
+    # Add state if available
+    [ -n "$state" ] && display+=" [${state}]"
+    
+    # Check inventory first for overrides
+    local inv_info=$(lookup_node_inventory "$name")
+    if [ -n "$inv_info" ]; then
+        IFS='|' read -r inv_gpu inv_cpu inv_mem inv_notes <<< "$inv_info"
+        [ -n "$inv_cpu" ] && cpus="$inv_cpu"
+        [ -n "$inv_mem" ] && mem="$inv_mem"
+        [ -n "$inv_gpu" ] && gres="$inv_gpu"
+    fi
+    
+    # Add resource info
+    [ -n "$cpus" ] && [ "$cpus" != "(null)" ] && display+=" cpu=${cpus}"
+    
+    # Format memory (convert MB to G if large)
+    if [ -n "$mem" ] && [ "$mem" != "(null)" ]; then
+        if [[ "$mem" =~ ^[0-9]+$ ]] && [ "$mem" -ge 1024 ]; then
+            local mem_gb=$((mem / 1024))
+            display+=" mem=${mem_gb}G"
+        else
+            display+=" mem=${mem}"
+        fi
+    fi
+    
+    # Format GRES (GPU info)
+    if [ -n "$gres" ] && [ "$gres" != "(null)" ]; then
+        # Parse GRES like "gpu:a100:4" -> "a100x4"
+        if [[ "$gres" =~ gpu:([^:]+):([0-9]+) ]]; then
+            local gpu_type="${BASH_REMATCH[1]}"
+            local gpu_count="${BASH_REMATCH[2]}"
+            display+=" gpu=${gpu_type}x${gpu_count}"
+        elif [[ "$gres" =~ gpu:([0-9]+) ]]; then
+            display+=" gpu=${BASH_REMATCH[1]}"
+        elif [ "$gres" != "(null)" ]; then
+            display+=" gres=${gres}"
+        fi
+    fi
+    
+    echo "$display"
+}
+
+# Build node options array with detailed display
+# Usage: build_node_options_detailed
+# Sets: NODE_DISPLAY_OPTS array and NODE_DISPLAY_MAP associative array
+declare -a NODE_DISPLAY_OPTS
+declare -A NODE_DISPLAY_MAP
+build_node_options_detailed() {
+    NODE_DISPLAY_OPTS=()
+    NODE_DISPLAY_MAP=()
+    
+    # Load inventory if available
+    load_node_inventory
+    
+    # Try detailed query first
+    local node_details=$(slurm_query_node_details)
+    
+    if [ -z "$node_details" ]; then
+        # Fallback to simple query
+        local nodes=$(slurm_query_nodes)
+        while IFS='|' read -r name state partition; do
+            [ -z "$name" ] && continue
+            local display=$(format_node_display "$name" "$state" "" "" "" "$partition")
+            NODE_DISPLAY_OPTS+=("$display")
+            NODE_DISPLAY_MAP["$display"]="$name"
+        done <<< "$nodes"
+    else
+        # Use detailed info
+        while IFS='|' read -r name state cpus mem gres partition; do
+            [ -z "$name" ] && continue
+            local display=$(format_node_display "$name" "$state" "$cpus" "$mem" "$gres" "$partition")
+            NODE_DISPLAY_OPTS+=("$display")
+            NODE_DISPLAY_MAP["$display"]="$name"
+        done <<< "$node_details"
+    fi
+    
+    # Remove duplicates while preserving order
+    local seen=()
+    local unique_opts=()
+    for opt in "${NODE_DISPLAY_OPTS[@]}"; do
+        local name="${NODE_DISPLAY_MAP[$opt]}"
+        if [[ ! " ${seen[*]} " =~ " ${name} " ]]; then
+            seen+=("$name")
+            unique_opts+=("$opt")
+        fi
+    done
+    NODE_DISPLAY_OPTS=("${unique_opts[@]}")
 }
 
 # ============================================
@@ -592,50 +922,92 @@ select_qos() {
 }
 
 # Interactive node selection (multi-select for exclude/nodelist)
+# Enhanced to show CPU/memory/GPU info when available
 select_nodes() {
     local result_var="$1"
     local default="$2"
     local title="$3"
     local prompt="$4"
     
-    local nodes=$(slurm_query_nodes)
+    # Show guidance based on whether this is nodelist or exclude
+    echo ""
+    if [[ "$title" == *"NodeList"* ]] || [[ "$title" == *"Prefer"* ]]; then
+        echo -e "${CYAN}NodeList Guidance:${NC}"
+        echo -e "  Use NodeList to prefer specific nodes for your jobs."
+        echo -e "  Jobs will run on these nodes when available, but SLURM"
+        echo -e "  may still use other nodes if these are busy."
+    elif [[ "$title" == *"Exclude"* ]]; then
+        echo -e "${CYAN}Exclude Guidance:${NC}"
+        echo -e "  Use Exclude to avoid problematic or unsuitable nodes."
+        echo -e "  Jobs will never be scheduled on excluded nodes."
+    fi
+    echo ""
     
-    if [ -z "$nodes" ]; then
+    # Build detailed node options
+    build_node_options_detailed
+    
+    if [ ${#NODE_DISPLAY_OPTS[@]} -eq 0 ]; then
+        echo -e "${YELLOW}Could not query cluster nodes.${NC}"
         get_input "$title (could not query cluster)" "$default" "$result_var"
         return
     fi
     
-    # Parse nodes with state info for display
-    local opts=()
-    while IFS='|' read -r name state partition; do
-        [ -n "$name" ] && opts+=("$name")
-    done <<< "$nodes"
+    local node_count=${#NODE_DISPLAY_OPTS[@]}
     
-    # Remove duplicates
-    local unique_opts=($(printf '%s\n' "${opts[@]}" | sort -u))
-    
-    if [ ${#unique_opts[@]} -gt 50 ]; then
-        echo -e "${YELLOW}Large cluster detected (${#unique_opts[@]} nodes).${NC}"
-        echo -e "Options: ${CYAN}1)${NC} Interactive menu  ${CYAN}2)${NC} Manual entry (SLURM hostlist)"
-        echo -ne "Choice [1/2]: "
+    # Large cluster handling
+    if [ $node_count -gt 50 ]; then
+        echo -e "${YELLOW}Large cluster detected (${node_count} nodes).${NC}"
+        echo -e "Options:"
+        echo -e "  ${CYAN}1)${NC} Interactive menu (with node details)"
+        echo -e "  ${CYAN}2)${NC} Manual entry (SLURM hostlist format)"
+        echo -e "  ${CYAN}0)${NC} Skip this selection"
+        echo -ne "Choice [1/2/0]: "
         read -r method
         
+        if [ "$method" = "0" ] || [ -z "$method" ]; then
+            eval "$result_var='$default'"
+            return
+        fi
+        
         if [ "$method" = "2" ]; then
-            echo -e "${CYAN}Enter nodes (SLURM hostlist format, e.g. node[01-05,08]):${NC}"
+            echo ""
+            echo -e "${CYAN}Enter nodes using SLURM hostlist format:${NC}"
+            echo -e "  Examples: ${YELLOW}node01,node02,node03${NC}"
+            echo -e "           ${YELLOW}node[01-10]${NC}"
+            echo -e "           ${YELLOW}gpu-node[01-05,08,10-12]${NC}"
             get_input "$title" "$default" "$result_var"
             return
         fi
     fi
     
-    unique_opts+=("(manual entry)")
+    # Add manual entry option
+    NODE_DISPLAY_OPTS+=("(manual entry)")
     
     local choice=""
-    menu_select_many "$title" "$prompt" choice "${unique_opts[@]}"
+    menu_select_many "$title" "$prompt" choice "${NODE_DISPLAY_OPTS[@]}"
     
-    if [ "$choice" = "(manual entry)" ] || [ -z "$choice" ]; then
-        get_input "$title (comma-separated or SLURM hostlist)" "$default" "$result_var"
+    if [ "$choice" = "(manual entry)" ]; then
+        echo ""
+        echo -e "${CYAN}Enter nodes (comma-separated or SLURM hostlist):${NC}"
+        get_input "$title" "$default" "$result_var"
+    elif [ -z "$choice" ]; then
+        eval "$result_var='$default'"
     else
-        eval "$result_var='$choice'"
+        # Convert display names back to node names
+        local node_names=""
+        IFS=',' read -ra selected_displays <<< "$choice"
+        for display in "${selected_displays[@]}"; do
+            # Handle whitespace
+            display=$(echo "$display" | xargs)
+            local node_name="${NODE_DISPLAY_MAP[$display]}"
+            if [ -z "$node_name" ]; then
+                # Fallback: extract first word (node name) from display
+                node_name="${display%% *}"
+            fi
+            [ -n "$node_names" ] && node_names+=","
+            node_names+="$node_name"
+        done
+        eval "$result_var='$node_names'"
     fi
 }
 

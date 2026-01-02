@@ -14,10 +14,13 @@ _slx_completion() {
     }
     
     # Main commands
-    commands="init project submit list running pending kill killall logs tail info status history find clean version help"
+    commands="init project profile submit list running pending kill killall logs tail info status history find clean version help"
     
     # Project subcommands
     project_commands="new submit list help"
+    
+    # Profile subcommands
+    profile_commands="new list show delete help"
     
     case "${COMP_CWORD}" in
         1)
@@ -30,6 +33,10 @@ _slx_completion() {
             case "${prev}" in
                 project)
                     COMPREPLY=($(compgen -W "${project_commands}" -- "${cur}"))
+                    return 0
+                    ;;
+                profile)
+                    COMPREPLY=($(compgen -W "${profile_commands}" -- "${cur}"))
                     return 0
                     ;;
                 submit)
@@ -107,6 +114,24 @@ _slx_completion() {
                             fi
                             return 0
                             ;;
+                        new)
+                            # Complete with --git, --no-git, --profile
+                            COMPREPLY=($(compgen -W "--git --no-git --profile" -- "${cur}"))
+                            return 0
+                            ;;
+                    esac
+                    ;;
+                profile)
+                    case "${COMP_WORDS[2]}" in
+                        show|delete)
+                            # Complete with profile names
+                            local config_dir="${XDG_CONFIG_HOME:-$HOME/.config}/slx"
+                            if [ -d "$config_dir/profiles.d" ]; then
+                                local profiles=$(ls -1 "$config_dir/profiles.d"/*.env 2>/dev/null | xargs -n1 basename 2>/dev/null | sed 's/\.env$//')
+                                COMPREPLY=($(compgen -W "${profiles}" -- "${cur}"))
+                            fi
+                            return 0
+                            ;;
                     esac
                     ;;
                 info)
@@ -133,6 +158,17 @@ _slx_completion() {
                     return 0
                     ;;
             esac
+            ;;
+        *)
+            # Handle --profile completion at any position
+            if [ "${prev}" == "--profile" ]; then
+                local config_dir="${XDG_CONFIG_HOME:-$HOME/.config}/slx"
+                if [ -d "$config_dir/profiles.d" ]; then
+                    local profiles=$(ls -1 "$config_dir/profiles.d"/*.env 2>/dev/null | xargs -n1 basename 2>/dev/null | sed 's/\.env$//')
+                    COMPREPLY=($(compgen -W "${profiles}" -- "${cur}"))
+                fi
+                return 0
+            fi
             ;;
     esac
     

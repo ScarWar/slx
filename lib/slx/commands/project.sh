@@ -19,13 +19,19 @@ cmd_project() {
             ;;
         ""|help)
             echo -e "${BOLD}Project commands:${NC}"
-            echo "  slx project new [--git|--no-git]   Create a new project"
+            echo "  slx project new [options]          Create a new project"
             echo "  slx project submit <name>          Submit a project's job"
             echo "  slx project list                   List all projects"
             echo ""
             echo -e "${BOLD}Options for 'new':${NC}"
-            echo "  --git       Initialize a git repository with README.md and .gitignore"
-            echo "  --no-git    Skip git initialization (default if not prompted)"
+            echo "  --git            Initialize a git repository with README.md and .gitignore"
+            echo "  --no-git         Skip git initialization (default if not prompted)"
+            echo "  --profile <name> Use a compute profile for job defaults"
+            echo ""
+            echo -e "${BOLD}Examples:${NC}"
+            echo "  slx project new                    # Interactive, uses global defaults"
+            echo "  slx project new --profile gpu-large  # Use 'gpu-large' profile"
+            echo "  slx project new --git --profile debug # Git repo + debug profile"
             ;;
         *)
             echo -e "${RED}Unknown project command: $subcmd${NC}"
@@ -37,23 +43,53 @@ cmd_project() {
 
 # Create a new project
 project_new() {
-    # Parse --git/--no-git flags
+    # Parse flags
     local INIT_GIT=""
+    local USE_PROFILE=""
     local args=()
-    for arg in "$@"; do
-        case "$arg" in
+    while [ $# -gt 0 ]; do
+        case "$1" in
             --git)
                 INIT_GIT="yes"
+                shift
                 ;;
             --no-git)
                 INIT_GIT="no"
+                shift
+                ;;
+            --profile)
+                if [ -n "$2" ] && [ "${2:0:1}" != "-" ]; then
+                    USE_PROFILE="$2"
+                    shift 2
+                else
+                    echo -e "${RED}Error: --profile requires a profile name${NC}"
+                    echo "Available profiles:"
+                    profile_list 2>/dev/null || echo "  (none)"
+                    return 1
+                fi
+                ;;
+            --profile=*)
+                USE_PROFILE="${1#*=}"
+                shift
                 ;;
             *)
-                args+=("$arg")
+                args+=("$1")
+                shift
                 ;;
         esac
     done
     set -- "${args[@]}"
+    
+    # Validate profile if specified
+    if [ -n "$USE_PROFILE" ]; then
+        if ! profile_exists "$USE_PROFILE"; then
+            echo -e "${RED}Error: Profile '${USE_PROFILE}' not found${NC}"
+            echo ""
+            echo "Available profiles:"
+            profile_list 2>/dev/null || echo "  (none)"
+            return 1
+        fi
+    fi
     
     echo -e "${BLUE}========================================${NC}"
     echo -e "${BLUE}Create New Project${NC}"
@@ -109,9 +145,10 @@ project_new() {
     get_input "SLURM job name" "$JOB_NAME" "JOB_NAME"
     
     echo ""
-    echo -e "${CYAN}Job resource settings (defaults from config, override as needed):${NC}"
+    echo -e "${CYAN}Job resource settings:${NC}"
     echo ""
     
+    # Start with global defaults
     local P_PARTITION="$SLX_PARTITION"
     local P_ACCOUNT="$SLX_ACCOUNT"
     local P_QOS="$SLX_QOS"
@@ -124,8 +161,35 @@ project_new() {
     local P_EXCLUDE="$SLX_EXCLUDE"
     local P_NODELIST="$SLX_NODELIST"
     
-    # Check if user wants to customize settings
-    echo -e "Current defaults: Partition=${CYAN}${P_PARTITION:-<auto>}${NC}, Account=${CYAN}${P_ACCOUNT:-<auto>}${NC}"
+    # Profile selection (if not specified via --profile)
+    local SELECTED_PROFILE=""
+    if [ -n "$USE_PROFILE" ]; then
+        # Profile was specified on command line
+        SELECTED_PROFILE="$USE_PROFILE"
+        echo -e "Using profile: ${GREEN}${SELECTED_PROFILE}${NC}"
+    else
+        # Check if any profiles exist and offer selection
+        local available_profiles=($(list_profiles))
+        if [ ${#available_profiles[@]} -gt 0 ]; then
+            select_profile "SELECTED_PROFILE"
+        fi
+    fi
+    
+    # Apply profile if selected
+    if [ -n "$SELECTED_PROFILE" ]; then
+        if load_profile "$SELECTED_PROFILE"; then
+            apply_profile_to_project
+            echo -e "Applied profile: ${GREEN}${SELECTED_PROFILE}${NC}"
+            [ -n "$SLX_PROFILE_DESC" ] && echo -e "  ${SLX_PROFILE_DESC}"
+            echo ""
+        fi
+    fi
+    
+    # Show current settings
+    echo -e "Current settings: Partition=${CYAN}${P_PARTITION:-<auto>}${NC}, Account=${CYAN}${P_ACCOUNT:-<auto>}${NC}"
+    if [ -n "$SELECTED_PROFILE" ]; then
+        echo -e "  (from profile '${SELECTED_PROFILE}', you can still customize below)"
+    fi
     echo -ne "${YELLOW}Customize job settings? [y/N]${NC}: "
     read -r customize
     

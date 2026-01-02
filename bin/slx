@@ -42,6 +42,10 @@ main() {
             shift
             cmd_project "$@"
             ;;
+        profile)
+            shift
+            cmd_profile "$@"
+            ;;
         submit)
             shift
             submit_job "$@"

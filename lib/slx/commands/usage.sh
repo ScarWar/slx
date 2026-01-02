@@ -13,9 +13,15 @@ ${BOLD}USAGE:${NC}
 
 ${BOLD}PROJECT COMMANDS:${NC}
     init                     Initialize slx configuration
-    project new              Create a new project with sbatch/run scripts
+    project new [--profile]  Create a new project with sbatch/run scripts
     project submit <name>    Submit a project's sbatch file
     project list             List all projects
+
+${BOLD}PROFILE COMMANDS:${NC}
+    profile new              Create a new compute profile
+    profile list             List all profiles
+    profile show <name>      Show profile details
+    profile delete <name>    Delete a profile
 
 ${BOLD}JOB COMMANDS:${NC}
     submit <script>          Submit a SLURM job script
@@ -39,7 +45,10 @@ ${BOLD}OTHER:${NC}
 ${BOLD}EXAMPLES:${NC}
     slx init
     slx project new
+    slx project new --profile gpu-large
     slx project submit my-project
+    slx profile new
+    slx profile list
     slx submit job.sbatch
     slx list
     slx logs 123456

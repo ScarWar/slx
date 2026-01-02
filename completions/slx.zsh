@@ -31,10 +31,11 @@ if ! type compdef &>/dev/null; then
 fi
 
 _slx() {
-    local -a commands project_commands
+    local -a commands project_commands profile_commands
     commands=(
         'init:Initialize slx configuration'
         'project:Project management commands'
+        'profile:Compute profile management'
         'submit:Submit a SLURM job script'
         'list:List all running/pending jobs'
         'running:List only running jobs'
@@ -59,6 +60,14 @@ _slx() {
         'help:Show project help'
     )
     
+    profile_commands=(
+        'new:Create a new compute profile'
+        'list:List all profiles'
+        'show:Show profile details'
+        'delete:Delete a profile'
+        'help:Show profile help'
+    )
+    
     # Only show commands if we're at position 1 (selecting the command)
     if [[ $CURRENT -eq 2 ]]; then
         _describe 'command' commands
@@ -77,6 +86,28 @@ _slx() {
                         if [ -d "$workdir/projects" ]; then
                             local projects=($(ls -1 "$workdir/projects" 2>/dev/null))
                             _describe 'project' projects
+                        fi
+                        ;;
+                    new)
+                        # Complete options including --profile
+                        local -a new_options
+                        new_options=('--git:Initialize git repository' '--no-git:Skip git' '--profile:Use compute profile')
+                        _describe 'option' new_options
+                        ;;
+                esac
+            fi
+            ;;
+        profile)
+            if [[ $CURRENT -eq 3 ]]; then
+                _describe 'profile command' profile_commands
+            else
+                case $words[3] in
+                    show|delete)
+                        # Complete with profile names
+                        local config_dir="${XDG_CONFIG_HOME:-$HOME/.config}/slx"
+                        if [ -d "$config_dir/profiles.d" ]; then
+                            local profiles=($(ls -1 "$config_dir/profiles.d"/*.env 2>/dev/null | xargs -n1 basename 2>/dev/null | sed 's/\.env$//'))
+                            _describe 'profile' profiles
                         fi
                         ;;
                 esac
@@ -144,6 +175,14 @@ _slx_project_submit() {
     if [ -d "$workdir/projects" ]; then
         local projects=($(ls -1 "$workdir/projects" 2>/dev/null))
         _describe 'project' projects
+    fi
+}
+
+_slx_profile_name() {
+    local config_dir="${XDG_CONFIG_HOME:-$HOME/.config}/slx"
+    if [ -d "$config_dir/profiles.d" ]; then
+        local profiles=($(ls -1 "$config_dir/profiles.d"/*.env 2>/dev/null | xargs -n1 basename 2>/dev/null | sed 's/\.env$//'))
+        _describe 'profile' profiles
     fi
 }
 
