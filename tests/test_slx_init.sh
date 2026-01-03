@@ -1018,6 +1018,416 @@ test_node_selection_no_cpu_memory_info() {
 }
 
 # ============================================
+# Menu Select One (Dialog/Whiptail) Tests
+# ============================================
+
+# Test index-to-option mapping for whiptail/dialog
+test_menu_select_one_index_mapping() {
+    # Simulate the index-to-option mapping logic from menu_select_one
+    local options=("cpu" "rtx3090" "highmem" "debug")
+    
+    # Simulate whiptail returning index 0 (first option)
+    local choice_index="0"
+    
+    local selected_option=""
+    if [[ "$choice_index" =~ ^[0-9]+$ ]] && [ "$choice_index" -ge 0 ] && [ "$choice_index" -lt ${#options[@]} ]; then
+        selected_option="${options[$choice_index]}"
+    fi
+    
+    assert_equals "cpu" "$selected_option" "Index 0 should map to first option 'cpu'"
+}
+
+test_menu_select_one_index_mapping_second() {
+    local options=("cpu" "rtx3090" "highmem" "debug")
+    
+    # Simulate whiptail returning index 1 (second option)
+    local choice_index="1"
+    
+    local selected_option=""
+    if [[ "$choice_index" =~ ^[0-9]+$ ]] && [ "$choice_index" -ge 0 ] && [ "$choice_index" -lt ${#options[@]} ]; then
+        selected_option="${options[$choice_index]}"
+    fi
+    
+    assert_equals "rtx3090" "$selected_option" "Index 1 should map to second option 'rtx3090'"
+}
+
+test_menu_select_one_index_mapping_last() {
+    local options=("cpu" "rtx3090" "highmem" "debug")
+    
+    # Simulate whiptail returning index 3 (last option)
+    local choice_index="3"
+    
+    local selected_option=""
+    if [[ "$choice_index" =~ ^[0-9]+$ ]] && [ "$choice_index" -ge 0 ] && [ "$choice_index" -lt ${#options[@]} ]; then
+        selected_option="${options[$choice_index]}"
+    fi
+    
+    assert_equals "debug" "$selected_option" "Index 3 should map to last option 'debug'"
+}
+
+test_menu_select_one_invalid_index() {
+    local options=("cpu" "rtx3090" "highmem" "debug")
+    
+    # Simulate whiptail returning invalid index
+    local choice_index="99"
+    
+    local selected_option=""
+    if [[ "$choice_index" =~ ^[0-9]+$ ]] && [ "$choice_index" -ge 0 ] && [ "$choice_index" -lt ${#options[@]} ]; then
+        selected_option="${options[$choice_index]}"
+    fi
+    
+    assert_equals "" "$selected_option" "Invalid index should result in empty selection"
+}
+
+test_menu_select_one_empty_index() {
+    local options=("cpu" "rtx3090" "highmem" "debug")
+    
+    # Simulate whiptail returning empty (cancelled)
+    local choice_index=""
+    
+    local selected_option=""
+    if [[ -n "$choice_index" ]] && [[ "$choice_index" =~ ^[0-9]+$ ]] && [ "$choice_index" -ge 0 ] && [ "$choice_index" -lt ${#options[@]} ]; then
+        selected_option="${options[$choice_index]}"
+    fi
+    
+    assert_equals "" "$selected_option" "Empty index should result in empty selection"
+}
+
+test_menu_select_one_with_manual_entry() {
+    local options=("cpu" "rtx3090" "highmem" "(manual entry)")
+    
+    # Simulate selecting manual entry (last option)
+    local choice_index="3"
+    
+    local selected_option=""
+    if [[ "$choice_index" =~ ^[0-9]+$ ]] && [ "$choice_index" -ge 0 ] && [ "$choice_index" -lt ${#options[@]} ]; then
+        selected_option="${options[$choice_index]}"
+    fi
+    
+    assert_equals "(manual entry)" "$selected_option" "Should correctly select (manual entry) option"
+}
+
+# Test menu item building for whiptail/dialog
+test_menu_items_building() {
+    local options=("cpu" "rtx3090" "highmem")
+    local menu_items=()
+    local i=0
+    
+    for opt in "${options[@]}"; do
+        menu_items+=("$i" "$opt")
+        ((i++))
+    done
+    
+    # menu_items should be: 0 cpu 1 rtx3090 2 highmem
+    assert_equals "6" "${#menu_items[@]}" "Menu items should have 6 elements (3 pairs)"
+    assert_equals "0" "${menu_items[0]}" "First tag should be 0"
+    assert_equals "cpu" "${menu_items[1]}" "First item should be cpu"
+    assert_equals "1" "${menu_items[2]}" "Second tag should be 1"
+    assert_equals "rtx3090" "${menu_items[3]}" "Second item should be rtx3090"
+    assert_equals "2" "${menu_items[4]}" "Third tag should be 2"
+    assert_equals "highmem" "${menu_items[5]}" "Third item should be highmem"
+}
+
+# Test partition selection with simulated responses
+test_partition_selection_first_option() {
+    # Simulate partition list
+    local partitions="cpu
+rtx3090
+highmem
+debug"
+    
+    local opts=()
+    while IFS= read -r line || [ -n "$line" ]; do
+        [ -n "$line" ] && opts+=("$line")
+    done <<< "$partitions"
+    
+    # Verify options are correctly parsed
+    assert_equals "4" "${#opts[@]}" "Should have 4 partitions"
+    assert_equals "cpu" "${opts[0]}" "First partition should be cpu"
+    assert_equals "rtx3090" "${opts[1]}" "Second partition should be rtx3090"
+    
+    # Simulate selecting index 0
+    local choice_index="0"
+    local selected="${opts[$choice_index]}"
+    
+    assert_equals "cpu" "$selected" "Selecting index 0 should return 'cpu'"
+}
+
+test_partition_selection_second_option() {
+    local partitions="cpu
+rtx3090
+highmem
+debug"
+    
+    local opts=()
+    while IFS= read -r line || [ -n "$line" ]; do
+        [ -n "$line" ] && opts+=("$line")
+    done <<< "$partitions"
+    
+    # Simulate selecting index 1
+    local choice_index="1"
+    local selected="${opts[$choice_index]}"
+    
+    assert_equals "rtx3090" "$selected" "Selecting index 1 should return 'rtx3090'"
+}
+
+test_qos_selection_options() {
+    # Simulate QoS list
+    local qos_list="normal
+high
+low
+assafza"
+    
+    local opts=()
+    while IFS= read -r line || [ -n "$line" ]; do
+        [ -n "$line" ] && opts+=("$line")
+    done <<< "$qos_list"
+    
+    # Verify options are correctly parsed
+    assert_equals "4" "${#opts[@]}" "Should have 4 QoS options"
+    assert_equals "normal" "${opts[0]}" "First QoS should be normal"
+    assert_equals "high" "${opts[1]}" "Second QoS should be high"
+    assert_equals "assafza" "${opts[3]}" "Fourth QoS should be assafza"
+    
+    # Simulate selecting index 3
+    local choice_index="3"
+    local selected="${opts[$choice_index]}"
+    
+    assert_equals "assafza" "$selected" "Selecting index 3 should return 'assafza'"
+}
+
+# Test whitespace handling in index
+test_menu_select_one_index_with_whitespace() {
+    local options=("cpu" "rtx3090" "highmem" "debug")
+    
+    # Simulate whiptail returning index with whitespace (can happen)
+    local choice_index="  1  "
+    
+    # Trim whitespace
+    choice_index=$(echo "$choice_index" | xargs)
+    
+    local selected_option=""
+    if [[ "$choice_index" =~ ^[0-9]+$ ]] && [ "$choice_index" -ge 0 ] && [ "$choice_index" -lt ${#options[@]} ]; then
+        selected_option="${options[$choice_index]}"
+    fi
+    
+    assert_equals "rtx3090" "$selected_option" "Index with whitespace should be trimmed and map correctly"
+}
+
+# ============================================
+# Whiptail Mock Tests
+# ============================================
+
+# Create a mock whiptail that outputs a specified tag to stderr and exits with specified code
+create_mock_whiptail() {
+    local tag_to_output="$1"
+    local exit_code="${2:-0}"
+    cat > "$MOCK_BIN/whiptail" << EOF
+#!/bin/bash
+# Mock whiptail: outputs tag to stderr and exits with specified code
+echo "$tag_to_output" >&2
+exit $exit_code
+EOF
+    chmod +x "$MOCK_BIN/whiptail"
+}
+
+remove_mock_whiptail() {
+    rm -f "$MOCK_BIN/whiptail"
+}
+
+# Test whiptail partition selection - first option (index 0)
+test_whiptail_partition_select_first() {
+    source_slx_functions
+    
+    # Create mock whiptail that returns index "0"
+    create_mock_whiptail "0" 0
+    
+    # Override detect_menu_tool to return whiptail
+    detect_menu_tool() { echo "whiptail"; }
+    
+    local options=("cpu" "rtx3090" "highmem" "debug")
+    local result=""
+    
+    # Build menu items like menu_select_one does
+    local menu_items=()
+    local i=0
+    for opt in "${options[@]}"; do
+        menu_items+=("$i" "$opt")
+        ((i++))
+    done
+    
+    # Simulate what menu_select_one does with whiptail output
+    local tmp_file=$(mktemp)
+    local exit_code=0
+    whiptail --title "Test" --menu "Select:" 20 60 12 "${menu_items[@]}" </dev/null >/dev/null 2>"$tmp_file" || exit_code=$?
+    local choice_index=$(cat "$tmp_file" 2>/dev/null || true)
+    rm -f "$tmp_file" 2>/dev/null || true
+    choice_index=$(echo "$choice_index" | xargs)
+    
+    if [ $exit_code -eq 0 ] && [ -n "$choice_index" ]; then
+        if [[ "$choice_index" =~ ^[0-9]+$ ]] && [ "$choice_index" -ge 0 ] && [ "$choice_index" -lt ${#options[@]} ]; then
+            result="${options[$choice_index]}"
+        fi
+    fi
+    
+    remove_mock_whiptail
+    
+    assert_equals "cpu" "$result" "Whiptail returning index 0 should select 'cpu'"
+}
+
+# Test whiptail partition selection - later option (index 2)
+test_whiptail_partition_select_later() {
+    source_slx_functions
+    
+    # Create mock whiptail that returns index "2"
+    create_mock_whiptail "2" 0
+    
+    local options=("cpu" "rtx3090" "highmem" "debug")
+    local result=""
+    
+    local menu_items=()
+    local i=0
+    for opt in "${options[@]}"; do
+        menu_items+=("$i" "$opt")
+        ((i++))
+    done
+    
+    local tmp_file=$(mktemp)
+    local exit_code=0
+    whiptail --title "Test" --menu "Select:" 20 60 12 "${menu_items[@]}" </dev/null >/dev/null 2>"$tmp_file" || exit_code=$?
+    local choice_index=$(cat "$tmp_file" 2>/dev/null || true)
+    rm -f "$tmp_file" 2>/dev/null || true
+    choice_index=$(echo "$choice_index" | xargs)
+    
+    if [ $exit_code -eq 0 ] && [ -n "$choice_index" ]; then
+        if [[ "$choice_index" =~ ^[0-9]+$ ]] && [ "$choice_index" -ge 0 ] && [ "$choice_index" -lt ${#options[@]} ]; then
+            result="${options[$choice_index]}"
+        fi
+    fi
+    
+    remove_mock_whiptail
+    
+    assert_equals "highmem" "$result" "Whiptail returning index 2 should select 'highmem'"
+}
+
+# Test whiptail QoS selection
+test_whiptail_qos_select() {
+    source_slx_functions
+    
+    # Create mock whiptail that returns index "3"
+    create_mock_whiptail "3" 0
+    
+    local options=("normal" "high" "low" "assafza")
+    local result=""
+    
+    local menu_items=()
+    local i=0
+    for opt in "${options[@]}"; do
+        menu_items+=("$i" "$opt")
+        ((i++))
+    done
+    
+    local tmp_file=$(mktemp)
+    local exit_code=0
+    whiptail --title "Test" --menu "Select:" 20 60 12 "${menu_items[@]}" </dev/null >/dev/null 2>"$tmp_file" || exit_code=$?
+    local choice_index=$(cat "$tmp_file" 2>/dev/null || true)
+    rm -f "$tmp_file" 2>/dev/null || true
+    choice_index=$(echo "$choice_index" | xargs)
+    
+    if [ $exit_code -eq 0 ] && [ -n "$choice_index" ]; then
+        if [[ "$choice_index" =~ ^[0-9]+$ ]] && [ "$choice_index" -ge 0 ] && [ "$choice_index" -lt ${#options[@]} ]; then
+            result="${options[$choice_index]}"
+        fi
+    fi
+    
+    remove_mock_whiptail
+    
+    assert_equals "assafza" "$result" "Whiptail returning index 3 should select 'assafza'"
+}
+
+# Test whiptail cancel/failure returns empty and does not exit with errexit
+test_whiptail_cancel_no_errexit() {
+    source_slx_functions
+    
+    # Create mock whiptail that exits with code 1 (cancel)
+    create_mock_whiptail "" 1
+    
+    # Test directly in current shell with errexit handling
+    local options=("cpu" "rtx3090" "highmem" "debug")
+    local result=""
+    
+    local menu_items=()
+    local i=0
+    for opt in "${options[@]}"; do
+        menu_items+=("$i" "$opt")
+        ((i++))
+    done
+    
+    local tmp_file=$(mktemp)
+    local exit_code=0
+    # This should NOT cause errexit even though whiptail returns 1
+    "$MOCK_BIN/whiptail" --title "Test" --menu "Select:" 20 60 12 "${menu_items[@]}" </dev/null >/dev/null 2>"$tmp_file" || exit_code=$?
+    local choice_index=$(cat "$tmp_file" 2>/dev/null || true)
+    rm -f "$tmp_file" 2>/dev/null || true
+    choice_index=$(echo "$choice_index" | xargs)
+    
+    if [ $exit_code -eq 0 ] && [ -n "$choice_index" ]; then
+        if [[ "$choice_index" =~ ^[0-9]+$ ]] && [ "$choice_index" -ge 0 ] && [ "$choice_index" -lt ${#options[@]} ]; then
+            result="${options[$choice_index]}"
+        fi
+    fi
+    
+    remove_mock_whiptail
+    
+    # Verify exit_code captured the non-zero return
+    assert_equals "1" "$exit_code" "Should capture exit code 1 from cancelled whiptail"
+    
+    # Verify result is empty (not set due to cancel)
+    assert_equals "" "$result" "Result should be empty on cancel"
+}
+
+# Test that SLURM query functions return success (exit 0) even when commands missing
+# This verifies they don't cause errexit to terminate the script
+test_slurm_query_no_errexit_missing_cmd() {
+    source_slx_functions
+    
+    # Remove any mock sinfo/sacctmgr to ensure clean state
+    remove_mock_sinfo
+    remove_mock_sacctmgr
+    
+    # Save original PATH and create a restricted PATH without SLURM commands
+    local old_path="$PATH"
+    
+    # Build a PATH that only has essential commands but NOT sinfo/sacctmgr
+    # We need: bash builtins (always available), grep, sed, sort, tr, wc (usually in /bin)
+    export PATH="$MOCK_BIN:/bin"
+    
+    # Verify sinfo/sacctmgr are NOT in our restricted PATH
+    if command -v sinfo &>/dev/null || command -v sacctmgr &>/dev/null; then
+        # SLURM commands are in /bin on this system, can't test this way
+        # Skip this test gracefully
+        export PATH="$old_path"
+        echo "SKIP: Cannot isolate SLURM commands on this system"
+        return 0
+    fi
+    
+    # Test that query functions return exit code 0 (not fail) when commands missing
+    local exit1=0 exit2=0 exit3=0
+    
+    slurm_query_partitions >/dev/null 2>&1 || exit1=$?
+    slurm_query_accounts >/dev/null 2>&1 || exit2=$?
+    slurm_query_qos >/dev/null 2>&1 || exit3=$?
+    
+    # Restore PATH
+    export PATH="$old_path"
+    
+    # All should return 0 (success) not 1 (failure)
+    assert_equals "0" "$exit1" "slurm_query_partitions should return 0 when sinfo missing"
+    assert_equals "0" "$exit2" "slurm_query_accounts should return 0 when sacctmgr missing"
+    assert_equals "0" "$exit3" "slurm_query_qos should return 0 when sacctmgr missing"
+}
+
+# ============================================
 # SBATCH Generation Tests
 # ============================================
 
@@ -1156,6 +1566,28 @@ run_test "node selection with map lookup" test_node_selection_with_map_lookup
 run_test "node selection fallback extraction" test_node_selection_fallback_extraction
 run_test "node selection complex display strings" test_node_selection_complex_display_strings
 run_test "node selection no CPU/memory info" test_node_selection_no_cpu_memory_info
+
+echo ""
+echo -e "${YELLOW}Menu Select One (Dialog/Whiptail):${NC}"
+run_test "menu index mapping first option" test_menu_select_one_index_mapping
+run_test "menu index mapping second option" test_menu_select_one_index_mapping_second
+run_test "menu index mapping last option" test_menu_select_one_index_mapping_last
+run_test "menu invalid index" test_menu_select_one_invalid_index
+run_test "menu empty index" test_menu_select_one_empty_index
+run_test "menu with manual entry" test_menu_select_one_with_manual_entry
+run_test "menu items building" test_menu_items_building
+run_test "partition selection first option" test_partition_selection_first_option
+run_test "partition selection second option" test_partition_selection_second_option
+run_test "qos selection options" test_qos_selection_options
+run_test "menu index with whitespace" test_menu_select_one_index_with_whitespace
+
+echo ""
+echo -e "${YELLOW}Whiptail Mock Tests:${NC}"
+run_test "whiptail partition select first" test_whiptail_partition_select_first
+run_test "whiptail partition select later" test_whiptail_partition_select_later
+run_test "whiptail QoS select" test_whiptail_qos_select
+run_test "whiptail cancel no errexit" test_whiptail_cancel_no_errexit
+run_test "SLURM query no errexit missing cmd" test_slurm_query_no_errexit_missing_cmd
 
 echo ""
 echo -e "${YELLOW}SBATCH Generation:${NC}"

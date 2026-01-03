@@ -465,56 +465,61 @@ detect_menu_tool() {
 }
 
 # Query available partitions from SLURM
+# Best-effort: returns empty output (not error) if command unavailable or no results
 slurm_query_partitions() {
     if ! has_cmd sinfo; then
-        return 1
+        return 0  # Return success with empty output instead of error
     fi
-    sinfo -h -o "%P" 2>/dev/null | sed 's/\*$//' | sort -u | grep -v '^$'
+    sinfo -h -o "%P" 2>/dev/null | sed 's/\*$//' | sort -u | grep -v '^$' || true
 }
 
 # Query available accounts for current user
+# Best-effort: returns empty output (not error) if command unavailable or no results
 slurm_query_accounts() {
     if ! has_cmd sacctmgr; then
-        return 1
+        return 0  # Return success with empty output instead of error
     fi
-    sacctmgr -n -P show assoc where user="$USER" format=account 2>/dev/null | sort -u | grep -v '^$'
+    sacctmgr -n -P show assoc where user="$USER" format=account 2>/dev/null | sort -u | grep -v '^$' || true
 }
 
 # Query available QoS for current user
+# Best-effort: returns empty output (not error) if command unavailable or no results
 slurm_query_qos() {
     if ! has_cmd sacctmgr; then
-        return 1
+        return 0  # Return success with empty output instead of error
     fi
-    sacctmgr -n -P show assoc where user="$USER" format=qos 2>/dev/null | tr ',' '\n' | sort -u | grep -v '^$'
+    sacctmgr -n -P show assoc where user="$USER" format=qos 2>/dev/null | tr ',' '\n' | sort -u | grep -v '^$' || true
 }
 
 # Query available nodes with state and partition info
 # Returns: nodename|state|partition
+# Best-effort: returns empty output (not error) if command unavailable or no results
 slurm_query_nodes() {
     if ! has_cmd sinfo; then
-        return 1
+        return 0  # Return success with empty output instead of error
     fi
-    sinfo -N -h -o "%N|%T|%P" 2>/dev/null | sed 's/\*$//' | sort -u | grep -v '^$'
+    sinfo -N -h -o "%N|%T|%P" 2>/dev/null | sed 's/\*$//' | sort -u | grep -v '^$' || true
 }
 
 # Query just node names (simple list)
+# Best-effort: returns empty output (not error) if command unavailable or no results
 slurm_query_node_names() {
     if ! has_cmd sinfo; then
-        return 1
+        return 0  # Return success with empty output instead of error
     fi
-    sinfo -N -h -o "%N" 2>/dev/null | sort -u | grep -v '^$'
+    sinfo -N -h -o "%N" 2>/dev/null | sort -u | grep -v '^$' || true
 }
 
 # Query detailed node information (CPU, memory, GPU/GRES, state)
 # Returns: nodename|state|cpus|mem|gres|partition
-# Best-effort: tries sinfo with detailed format
+# Best-effort: returns empty output (not error) if command unavailable or no results
 slurm_query_node_details() {
     if ! has_cmd sinfo; then
-        return 1
+        return 0  # Return success with empty output instead of error
     fi
     # Format: NodeName|State|CPUs|Memory(MB)|GRES|Partition
     # Memory is in MB, GRES shows GPU info like "gpu:a100:4"
-    sinfo -N -h -o "%N|%T|%c|%m|%G|%P" 2>/dev/null | sed 's/\*$//' | sort -u | grep -v '^$'
+    sinfo -N -h -o "%N|%T|%c|%m|%G|%P" 2>/dev/null | sed 's/\*$//' | sort -u | grep -v '^$' || true
 }
 
 # Load node inventory from user-maintained TSV file
@@ -669,18 +674,40 @@ menu_select_one() {
     case "$menu_tool" in
         whiptail|dialog)
             local menu_items=()
-            local i=1
+            local i=0
+            # Build menu items: use index as tag, option text as display
+            # This ensures reliable mapping between selection and option
             for opt in "${options[@]}"; do
-                menu_items+=("$opt" "$i")
-                ((i++))
+                menu_items+=("$i" "$opt")
+                ((i++)) || true  # Prevent errexit when i=0 (evaluates to false)
             done
             
-            local choice
-            choice=$($menu_tool --title "$title" --menu "$prompt" 20 60 12 "${menu_items[@]}" 3>&1 1>&2 2>&3)
-            local exit_code=$?
+            local choice_index=""
+            local exit_code=0
             
-            if [ $exit_code -eq 0 ] && [ -n "$choice" ]; then
-                eval "$result_var='$choice'"
+            # whiptail/dialog:
+            # - Displays UI on terminal (via ncurses)
+            # - Returns selection on stderr
+            # Use temp file to capture stderr (selection) while keeping terminal for display
+            # All operations are made errexit-safe with || true patterns
+            local tmp_file
+            tmp_file=$(mktemp 2>/dev/null) || tmp_file="/tmp/slx_menu_$$"
+            $menu_tool --title "$title" --menu "$prompt" 20 60 12 "${menu_items[@]}" </dev/tty >/dev/tty 2>"$tmp_file" || exit_code=$?
+            choice_index=$(cat "$tmp_file" 2>/dev/null) || true
+            rm -f "$tmp_file" 2>/dev/null || true
+            
+            # Trim whitespace (xargs can fail on unusual input, so make it safe)
+            choice_index=$(echo "$choice_index" | xargs 2>/dev/null) || choice_index=""
+            
+            if [ $exit_code -eq 0 ] && [ -n "$choice_index" ]; then
+                # Convert index back to option text
+                if [[ "$choice_index" =~ ^[0-9]+$ ]] && [ "$choice_index" -ge 0 ] && [ "$choice_index" -lt ${#options[@]} ]; then
+                    local selected_option="${options[$choice_index]}"
+                    eval "$result_var='$selected_option'"
+                else
+                    # Invalid index, treat as cancelled
+                    eval "$result_var=''"
+                fi
             else
                 eval "$result_var=''"
             fi
@@ -734,13 +761,32 @@ menu_select_many() {
                 menu_items+=("$opt" "" "OFF")
             done
             
-            local choices
-            choices=$($menu_tool --title "$title" --checklist "$prompt" 22 70 15 "${menu_items[@]}" 3>&1 1>&2 2>&3)
-            local exit_code=$?
+            local choices=""
+            local exit_code=0
+            
+            # whiptail/dialog: capture stderr (selection) while keeping terminal for display
+            # All operations are made errexit-safe with || true patterns
+            local tmp_file
+            tmp_file=$(mktemp 2>/dev/null) || tmp_file="/tmp/slx_menu_multi_$$"
+            $menu_tool --title "$title" --checklist "$prompt" 22 70 15 "${menu_items[@]}" </dev/tty >/dev/tty 2>"$tmp_file" || exit_code=$?
+            choices=$(cat "$tmp_file" 2>/dev/null) || true
+            rm -f "$tmp_file" 2>/dev/null || true
             
             if [ $exit_code -eq 0 ] && [ -n "$choices" ]; then
-                # Remove quotes and convert spaces to commas
-                local cleaned=$(echo "$choices" | tr -d '"' | tr ' ' ',')
+                # Parse quoted strings properly (whiptail/dialog returns space-separated quoted strings)
+                # Example: "item1" "item2 with spaces" "item3"
+                # We need to extract each quoted string and join with commas, preserving spaces within strings
+                local cleaned=""
+                # Extract quoted strings using grep -o to get all matches, then join with commas
+                # Use `|| true` to handle empty output from grep
+                local items=$(echo "$choices" | grep -o '"[^"]*"' | sed 's/"//g' || true)
+                while IFS= read -r item; do
+                    [ -z "$item" ] && continue
+                    if [ -n "$cleaned" ]; then
+                        cleaned+=","
+                    fi
+                    cleaned+="$item"
+                done <<< "$items"
                 eval "$result_var='$cleaned'"
             else
                 eval "$result_var=''"
@@ -846,9 +892,16 @@ select_partition() {
     fi
     
     local opts=()
-    while IFS= read -r line; do
+    # Read partitions into array, handling empty lines
+    while IFS= read -r line || [ -n "$line" ]; do
         [ -n "$line" ] && opts+=("$line")
     done <<< "$partitions"
+    
+    # Ensure we have at least one option
+    if [ ${#opts[@]} -eq 0 ]; then
+        get_input "Partition (no partitions found)" "$default" "$result_var"
+        return
+    fi
     
     # Add manual entry option
     opts+=("(manual entry)")
@@ -876,9 +929,16 @@ select_account() {
     fi
     
     local opts=()
-    while IFS= read -r line; do
+    # Read accounts into array, handling empty lines
+    while IFS= read -r line || [ -n "$line" ]; do
         [ -n "$line" ] && opts+=("$line")
     done <<< "$accounts"
+    
+    # Ensure we have at least one option
+    if [ ${#opts[@]} -eq 0 ]; then
+        get_input "Account (no accounts found)" "$default" "$result_var"
+        return
+    fi
     
     opts+=("(manual entry)")
     
@@ -905,9 +965,16 @@ select_qos() {
     fi
     
     local opts=()
-    while IFS= read -r line; do
+    # Read QoS into array, handling empty lines
+    while IFS= read -r line || [ -n "$line" ]; do
         [ -n "$line" ] && opts+=("$line")
     done <<< "$qos_list"
+    
+    # Ensure we have at least one option
+    if [ ${#opts[@]} -eq 0 ]; then
+        get_input "QoS (no QoS found)" "$default" "$result_var"
+        return
+    fi
     
     opts+=("(manual entry)")
     
