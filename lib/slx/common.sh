@@ -997,15 +997,29 @@ select_nodes() {
         local node_names=""
         IFS=',' read -ra selected_displays <<< "$choice"
         for display in "${selected_displays[@]}"; do
-            # Handle whitespace
-            display=$(echo "$display" | xargs)
+            # Remove quotes if present (from whiptail/dialog)
+            display=$(echo "$display" | tr -d '"' | xargs)
+            
+            # Try to get node name from map first
             local node_name="${NODE_DISPLAY_MAP[$display]}"
+            
+            # If not found in map, extract node name from display string
+            # Display format: "node01 [idle] cpu=64 mem=512G gpu=a100x4"
+            # We want just "node01" - everything before first space or bracket
             if [ -z "$node_name" ]; then
-                # Fallback: extract first word (node name) from display
-                node_name="${display%% *}"
+                # Remove any leading/trailing whitespace first
+                display=$(echo "$display" | xargs)
+                # Extract first word (node name) - use awk to get first field
+                node_name=$(echo "$display" | awk '{print $1}')
+                # Clean up: remove any brackets or special chars that might have been included
+                node_name=$(echo "$node_name" | sed 's/\[.*//' | sed 's/.*\]//' | xargs)
             fi
-            [ -n "$node_names" ] && node_names+=","
-            node_names+="$node_name"
+            
+            # Only add if we have a valid node name
+            if [ -n "$node_name" ]; then
+                [ -n "$node_names" ] && node_names+=","
+                node_names+="$node_name"
+            fi
         done
         eval "$result_var='$node_names'"
     fi

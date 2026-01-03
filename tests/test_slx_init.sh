@@ -841,6 +841,183 @@ gpu"
 }
 
 # ============================================
+# Node Selection Extraction Tests
+# ============================================
+
+test_node_selection_extracts_name_only() {
+    # Test that node selection extracts only node names, not full display strings
+    # Simulate the extraction logic from select_nodes function
+    
+    # Simulate display strings with CPU, memory, GPU info
+    local choice="node01 [idle] cpu=64 mem=512G gpu=a100x4,node02 [allocated] cpu=32 mem=256G gpu=v100x2"
+    
+    # Simulate the extraction logic
+    local node_names=""
+    IFS=',' read -ra selected_displays <<< "$choice"
+    for display in "${selected_displays[@]}"; do
+        # Remove quotes if present (from whiptail/dialog)
+        display=$(echo "$display" | tr -d '"' | xargs)
+        
+        # Extract first word (node name) - use awk to get first field
+        local node_name=$(echo "$display" | awk '{print $1}')
+        # Clean up: remove any brackets or special chars that might have been included
+        node_name=$(echo "$node_name" | sed 's/\[.*//' | sed 's/.*\]//' | xargs)
+        
+        # Only add if we have a valid node name
+        if [ -n "$node_name" ]; then
+            [ -n "$node_names" ] && node_names+=","
+            node_names+="$node_name"
+        fi
+    done
+    
+    assert_equals "node01,node02" "$node_names" "Should extract only node names, not full display strings"
+}
+
+test_node_selection_with_quotes() {
+    # Test that quotes are properly removed
+    local choice='"node01 [idle] cpu=64 mem=512G gpu=a100x4","node02 [allocated] cpu=32 mem=256G"'
+    
+    local node_names=""
+    IFS=',' read -ra selected_displays <<< "$choice"
+    for display in "${selected_displays[@]}"; do
+        display=$(echo "$display" | tr -d '"' | xargs)
+        local node_name=$(echo "$display" | awk '{print $1}')
+        node_name=$(echo "$node_name" | sed 's/\[.*//' | sed 's/.*\]//' | xargs)
+        
+        if [ -n "$node_name" ]; then
+            [ -n "$node_names" ] && node_names+=","
+            node_names+="$node_name"
+        fi
+    done
+    
+    assert_equals "node01,node02" "$node_names" "Should handle quoted display strings"
+}
+
+test_node_selection_single_node() {
+    # Test with a single node selection
+    local choice="gpu-node-01 [idle] cpu=128 mem=1024G gpu=a100x8"
+    
+    local node_names=""
+    IFS=',' read -ra selected_displays <<< "$choice"
+    for display in "${selected_displays[@]}"; do
+        display=$(echo "$display" | tr -d '"' | xargs)
+        local node_name=$(echo "$display" | awk '{print $1}')
+        node_name=$(echo "$node_name" | sed 's/\[.*//' | sed 's/.*\]//' | xargs)
+        
+        if [ -n "$node_name" ]; then
+            [ -n "$node_names" ] && node_names+=","
+            node_names+="$node_name"
+        fi
+    done
+    
+    assert_equals "gpu-node-01" "$node_names" "Should extract single node name correctly"
+}
+
+test_node_selection_with_map_lookup() {
+    # Test that map lookup works when available
+    # Simulate NODE_DISPLAY_MAP
+    declare -A NODE_DISPLAY_MAP
+    NODE_DISPLAY_MAP["node01 [idle] cpu=64 mem=512G gpu=a100x4"]="node01"
+    NODE_DISPLAY_MAP["node02 [allocated] cpu=32 mem=256G"]="node02"
+    
+    local choice="node01 [idle] cpu=64 mem=512G gpu=a100x4,node02 [allocated] cpu=32 mem=256G"
+    
+    local node_names=""
+    IFS=',' read -ra selected_displays <<< "$choice"
+    for display in "${selected_displays[@]}"; do
+        display=$(echo "$display" | tr -d '"' | xargs)
+        
+        # Try to get node name from map first
+        local node_name="${NODE_DISPLAY_MAP[$display]}"
+        
+        # If not found in map, extract node name from display string
+        if [ -z "$node_name" ]; then
+            display=$(echo "$display" | xargs)
+            node_name=$(echo "$display" | awk '{print $1}')
+            node_name=$(echo "$node_name" | sed 's/\[.*//' | sed 's/.*\]//' | xargs)
+        fi
+        
+        if [ -n "$node_name" ]; then
+            [ -n "$node_names" ] && node_names+=","
+            node_names+="$node_name"
+        fi
+    done
+    
+    assert_equals "node01,node02" "$node_names" "Should use map lookup when available"
+}
+
+test_node_selection_fallback_extraction() {
+    # Test fallback extraction when map lookup fails
+    declare -A NODE_DISPLAY_MAP
+    # Map doesn't have the entry, so should fall back to extraction
+    
+    local choice="node03 [mixed] cpu=48 mem=384G gpu=rtx3090x4"
+    
+    local node_names=""
+    IFS=',' read -ra selected_displays <<< "$choice"
+    for display in "${selected_displays[@]}"; do
+        display=$(echo "$display" | tr -d '"' | xargs)
+        
+        # Try to get node name from map first
+        local node_name="${NODE_DISPLAY_MAP[$display]}"
+        
+        # If not found in map, extract node name from display string
+        if [ -z "$node_name" ]; then
+            display=$(echo "$display" | xargs)
+            node_name=$(echo "$display" | awk '{print $1}')
+            node_name=$(echo "$node_name" | sed 's/\[.*//' | sed 's/.*\]//' | xargs)
+        fi
+        
+        if [ -n "$node_name" ]; then
+            [ -n "$node_names" ] && node_names+=","
+            node_names+="$node_name"
+        fi
+    done
+    
+    assert_equals "node03" "$node_names" "Should fall back to extraction when map lookup fails"
+}
+
+test_node_selection_complex_display_strings() {
+    # Test with various complex display string formats
+    local choice="node-01 [idle] cpu=64 mem=512G gpu=a100x4,node-02 [allocated] cpu=32,node-03 [mixed] mem=256G"
+    
+    local node_names=""
+    IFS=',' read -ra selected_displays <<< "$choice"
+    for display in "${selected_displays[@]}"; do
+        display=$(echo "$display" | tr -d '"' | xargs)
+        local node_name=$(echo "$display" | awk '{print $1}')
+        node_name=$(echo "$node_name" | sed 's/\[.*//' | sed 's/.*\]//' | xargs)
+        
+        if [ -n "$node_name" ]; then
+            [ -n "$node_names" ] && node_names+=","
+            node_names+="$node_name"
+        fi
+    done
+    
+    assert_equals "node-01,node-02,node-03" "$node_names" "Should handle complex display strings"
+}
+
+test_node_selection_no_cpu_memory_info() {
+    # Test with display strings that don't have CPU/memory info
+    local choice="node01 [idle],node02 [allocated]"
+    
+    local node_names=""
+    IFS=',' read -ra selected_displays <<< "$choice"
+    for display in "${selected_displays[@]}"; do
+        display=$(echo "$display" | tr -d '"' | xargs)
+        local node_name=$(echo "$display" | awk '{print $1}')
+        node_name=$(echo "$node_name" | sed 's/\[.*//' | sed 's/.*\]//' | xargs)
+        
+        if [ -n "$node_name" ]; then
+            [ -n "$node_names" ] && node_names+=","
+            node_names+="$node_name"
+        fi
+    done
+    
+    assert_equals "node01,node02" "$node_names" "Should extract names even without CPU/memory info"
+}
+
+# ============================================
 # SBATCH Generation Tests
 # ============================================
 
@@ -969,6 +1146,16 @@ run_test "partition with special characters" test_partition_with_special_charact
 run_test "node with complex state" test_node_with_complex_state
 run_test "whitespace handling" test_whitespace_handling
 run_test "duplicate entries" test_duplicate_entries
+
+echo ""
+echo -e "${YELLOW}Node Selection Extraction:${NC}"
+run_test "node selection extracts name only" test_node_selection_extracts_name_only
+run_test "node selection with quotes" test_node_selection_with_quotes
+run_test "node selection single node" test_node_selection_single_node
+run_test "node selection with map lookup" test_node_selection_with_map_lookup
+run_test "node selection fallback extraction" test_node_selection_fallback_extraction
+run_test "node selection complex display strings" test_node_selection_complex_display_strings
+run_test "node selection no CPU/memory info" test_node_selection_no_cpu_memory_info
 
 echo ""
 echo -e "${YELLOW}SBATCH Generation:${NC}"
