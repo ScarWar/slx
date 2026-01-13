@@ -199,8 +199,8 @@ test_bash_completion_first_position_shows_commands() {
     
     _slx_completion
     
-    # Should show all commands (including profile)
-    local commands="init project profile submit list running pending kill killall logs tail info status history find clean version help"
+    # Should show all commands (including profile and run)
+    local commands="init project profile run submit list running pending kill killall logs tail info status history find clean version help"
     for cmd in $commands; do
         assert_array_contains "COMPREPLY" "$cmd" "Should contain command: $cmd"
     done
@@ -676,6 +676,55 @@ test_bash_completion_project_new_shows_profile_option() {
 }
 
 # ============================================
+# Run Command Completion Tests
+# ============================================
+
+test_bash_completion_run_shows_options() {
+    source "$COMPLETION_BASH"
+    
+    COMP_WORDS=(slx run)
+    COMP_CWORD=2
+    
+    _slx_completion
+    
+    assert_array_contains "COMPREPLY" "--profile" "Should show --profile option for run"
+    assert_array_contains "COMPREPLY" "--mode" "Should show --mode option for run"
+    assert_array_contains "COMPREPLY" "--help" "Should show --help option for run"
+}
+
+test_bash_completion_run_mode_completes_values() {
+    source "$COMPLETION_BASH"
+    
+    COMP_WORDS=(slx run --mode)
+    COMP_CWORD=3
+    
+    _slx_completion
+    
+    assert_array_contains "COMPREPLY" "srun" "Should show srun mode"
+    assert_array_contains "COMPREPLY" "sbatch" "Should show sbatch mode"
+}
+
+test_bash_completion_run_profile_completes_profiles() {
+    source "$COMPLETION_BASH"
+    
+    # Create mock profiles
+    local config_dir="$TEST_TMP/config/slx"
+    mkdir -p "$config_dir/profiles.d"
+    touch "$config_dir/profiles.d/gpu-large.env"
+    touch "$config_dir/profiles.d/cpu-small.env"
+    
+    export XDG_CONFIG_HOME="$TEST_TMP/config"
+    
+    COMP_WORDS=(slx run --profile)
+    COMP_CWORD=3
+    
+    _slx_completion
+    
+    assert_array_contains "COMPREPLY" "gpu-large" "Should contain profile: gpu-large"
+    assert_array_contains "COMPREPLY" "cpu-small" "Should contain profile: cpu-small"
+}
+
+# ============================================
 # Run All Tests
 # ============================================
 
@@ -728,6 +777,12 @@ echo -e "${YELLOW}Profile Completion:${NC}"
 run_test "profile shows subcommands" test_bash_completion_profile_shows_subcommands
 run_test "profile show completes names" test_bash_completion_profile_show_completes_names
 run_test "project new shows profile option" test_bash_completion_project_new_shows_profile_option
+
+echo ""
+echo -e "${YELLOW}Run Command Completion:${NC}"
+run_test "run shows options" test_bash_completion_run_shows_options
+run_test "run --mode completes values" test_bash_completion_run_mode_completes_values
+run_test "run --profile completes profiles" test_bash_completion_run_profile_completes_profiles
 
 echo ""
 echo -e "${BLUE}============================================${NC}"

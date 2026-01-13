@@ -36,6 +36,7 @@ _slx() {
         'init:Initialize slx configuration'
         'project:Project management commands'
         'profile:Compute profile management'
+        'run:Run a command using a profile'
         'submit:Submit a SLURM job script'
         'list:List all running/pending jobs'
         'running:List only running jobs'
@@ -146,6 +147,26 @@ _slx() {
             if command -v squeue &> /dev/null; then
                 local job_names=($(squeue -u $USER -h -o "%j" 2>/dev/null | sort -u))
                 _describe 'job-name' job_names
+            fi
+            ;;
+        run)
+            # Handle --profile and --mode completions
+            if [[ "$words[$CURRENT-1]" == "--profile" ]]; then
+                # Complete profile names
+                local config_dir="${XDG_CONFIG_HOME:-$HOME/.config}/slx"
+                if [ -d "$config_dir/profiles.d" ]; then
+                    local profiles=($(ls -1 "$config_dir/profiles.d"/*.env 2>/dev/null | xargs -n1 basename 2>/dev/null | sed 's/\.env$//'))
+                    _describe 'profile' profiles
+                fi
+            elif [[ "$words[$CURRENT-1]" == "--mode" ]]; then
+                # Complete mode values
+                local modes=('srun:Interactive/blocking mode' 'sbatch:Batch submit mode')
+                _describe 'mode' modes
+            else
+                # Show run options
+                local -a run_options
+                run_options=('--profile:Use a compute profile' '--mode:Execution mode (srun or sbatch)' '--help:Show help')
+                _describe 'option' run_options
             fi
             ;;
     esac

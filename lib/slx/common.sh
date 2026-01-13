@@ -3,7 +3,7 @@
 # Shared functionality for all slx commands
 
 # Tool info
-SLX_VERSION="1.0.0"
+SLX_VERSION="1.1.0"
 SLX_NAME="slx"
 
 # XDG directories (with fallbacks)

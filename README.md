@@ -6,6 +6,7 @@ A production-ready SLURM project manager for HPC clusters. Manage jobs, create p
 
 - **Project Management** - Create and manage SLURM projects with generated sbatch/run scripts
 - **Compute Profiles** - Save and reuse SLURM job presets (partition, GPUs, memory, node preferences)
+- **Quick Run** - Run one-off commands using profiles via `slx run` (srun or sbatch)
 - **Git Integration** - Optionally initialize a git repository for your project code
 - **Job Operations** - Submit, list, kill, and monitor SLURM jobs
 - **Cluster-Aware Setup** - Queries SLURM for available partitions, accounts, QoS, and nodes
@@ -170,6 +171,40 @@ When creating a project, you can either:
 2. Specify via command line: `slx project new --profile gpu-large`
 
 The profile settings become the starting defaults, which you can still customize.
+
+### Run One-off Commands
+
+Use `slx run` to quickly run commands using a compute profile without creating a project:
+
+```bash
+# Run a command interactively (srun) using a profile
+slx run --profile gpu-large python train.py
+
+# Get an interactive shell on a GPU node
+slx run --profile gpu-large
+
+# Submit as a batch job (sbatch) - logs go to $SLX_LOG_DIR
+slx run --profile gpu-large --mode sbatch ./long_training.sh
+
+# Run without a profile (uses global defaults)
+slx run nvidia-smi
+
+# Use -- to separate slx options from command options
+slx run --profile debug -- ls -la
+```
+
+#### Run Options
+
+| Option             | Description                                               |
+|--------------------|-----------------------------------------------------------|
+| `--profile <name>` | Use settings from a saved compute profile                 |
+| `--mode <mode>`    | Execution mode: `srun` (default) or `sbatch`              |
+| `--help`           | Show help for the run command                             |
+
+#### Execution Modes
+
+- **srun (default)**: Interactive/blocking mode. Output streams to terminal. If no command is provided, starts an interactive shell (`bash`) on the allocated node.
+- **sbatch**: Batch submit mode. Command runs in background, output written to log files in `$SLX_LOG_DIR`. Requires a command (no interactive shell). Use `slx logs` or `slx tail` to view output.
 
 ### Job Commands
 

@@ -14,7 +14,7 @@ _slx_completion() {
     }
     
     # Main commands
-    commands="init project profile submit list running pending kill killall logs tail info status history find clean version help"
+    commands="init project profile run submit list running pending kill killall logs tail info status history find clean version help"
     
     # Project subcommands
     project_commands="new submit list help"
@@ -71,6 +71,11 @@ _slx_completion() {
                     ;;
                 history)
                     COMPREPLY=($(compgen -W "--days" -- "${cur}"))
+                    return 0
+                    ;;
+                run)
+                    # Complete with --profile, --mode, --help
+                    COMPREPLY=($(compgen -W "--profile --mode --help" -- "${cur}"))
                     return 0
                     ;;
                 find)
@@ -157,6 +162,21 @@ _slx_completion() {
                     fi
                     return 0
                     ;;
+                run)
+                    # Handle run options at position 3
+                    if [ "${prev}" == "--mode" ]; then
+                        COMPREPLY=($(compgen -W "srun sbatch" -- "${cur}"))
+                    elif [ "${prev}" == "--profile" ]; then
+                        local config_dir="${XDG_CONFIG_HOME:-$HOME/.config}/slx"
+                        if [ -d "$config_dir/profiles.d" ]; then
+                            local profiles=$(ls -1 "$config_dir/profiles.d"/*.env 2>/dev/null | xargs -n1 basename 2>/dev/null | sed 's/\.env$//')
+                            COMPREPLY=($(compgen -W "${profiles}" -- "${cur}"))
+                        fi
+                    else
+                        COMPREPLY=($(compgen -W "--profile --mode --help" -- "${cur}"))
+                    fi
+                    return 0
+                    ;;
             esac
             ;;
         *)
@@ -167,6 +187,16 @@ _slx_completion() {
                     local profiles=$(ls -1 "$config_dir/profiles.d"/*.env 2>/dev/null | xargs -n1 basename 2>/dev/null | sed 's/\.env$//')
                     COMPREPLY=($(compgen -W "${profiles}" -- "${cur}"))
                 fi
+                return 0
+            fi
+            # Handle --mode completion for run command
+            if [ "${prev}" == "--mode" ]; then
+                COMPREPLY=($(compgen -W "srun sbatch" -- "${cur}"))
+                return 0
+            fi
+            # Handle run command options at any position
+            if [ "${COMP_WORDS[1]}" == "run" ]; then
+                COMPREPLY=($(compgen -W "--profile --mode --help" -- "${cur}"))
                 return 0
             fi
             ;;

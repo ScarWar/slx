@@ -24,6 +24,7 @@ ${BOLD}PROFILE COMMANDS:${NC}
     profile delete <name>    Delete a profile
 
 ${BOLD}JOB COMMANDS:${NC}
+    run [options] [command]  Run a command using a profile (srun or sbatch)
     submit <script>          Submit a SLURM job script
     list [--user USER]       List all running/pending jobs
     running                  List only running jobs
@@ -49,6 +50,9 @@ ${BOLD}EXAMPLES:${NC}
     slx project submit my-project
     slx profile new
     slx profile list
+    slx run --profile gpu-large python train.py
+    slx run --profile debug --mode sbatch ./long_job.sh
+    slx run --profile gpu-large          # interactive shell
     slx submit job.sbatch
     slx list
     slx logs 123456

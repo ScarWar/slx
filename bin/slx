@@ -50,6 +50,10 @@ main() {
             shift
             submit_job "$@"
             ;;
+        run)
+            shift
+            cmd_run "$@"
+            ;;
         list)
             shift
             list_jobs "$@"

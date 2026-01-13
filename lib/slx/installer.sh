@@ -5,7 +5,7 @@
 
 # Tool info
 SLX_NAME="slx"
-SLX_VERSION="1.0.0"
+SLX_VERSION="1.1.0"
 
 # Colors for output
 RED='\033[0;31m'
